@@ -7,6 +7,8 @@ use Baspa\FilamentCanary\Introspection\PageTargetCollector;
 use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * The engine. Walks every Filament panel's pages and, for each, asserts that an
@@ -32,6 +34,44 @@ class SmokeSweep
      * @return list<SweepResult>
      */
     public function run(): array
+    {
+        if ($this->isProduction()) {
+            throw new RuntimeException(
+                'filament-canary refuses to run in the [production] environment. The sweep requests '.
+                'every page as an authenticated user, which can trigger real side effects (queued jobs, '.
+                "mail, audit logs, writes on other connections) that a database rollback won't undo."
+            );
+        }
+
+        if (! (bool) config('filament-canary.use_transaction', true)) {
+            return $this->sweepAll();
+        }
+
+        // Wrap the whole sweep in a transaction so the users/records it creates never
+        // persist. Covers the default connection only — see the production guard above
+        // for everything a rollback can't reach.
+        DB::beginTransaction();
+
+        try {
+            return $this->sweepAll();
+        } finally {
+            // Only roll back if the transaction is still open: app code may have
+            // committed/closed it mid-sweep (e.g. DDL), leaving nothing to undo.
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+        }
+    }
+
+    protected function isProduction(): bool
+    {
+        return app()->environment('production');
+    }
+
+    /**
+     * @return list<SweepResult>
+     */
+    protected function sweepAll(): array
     {
         $only = $this->stringList(config('filament-canary.panels.only', []));
         $except = $this->stringList(config('filament-canary.panels.except', []));

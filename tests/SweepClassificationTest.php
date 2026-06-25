@@ -126,6 +126,26 @@ it('skips pages with route parameters it cannot resolve', function () {
         ->and($results[0]->reason)->toContain('cannot resolve');
 });
 
+it('runs without a transaction when use_transaction is disabled', function () {
+    config()->set('filament-canary.use_transaction', false);
+
+    $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: 302));
+
+    expect($results[0]->status)->toBe(SweepStatus::Passed);
+});
+
+it('refuses to run in the production environment', function () {
+    $sweep = new class(new PanelCollector, new PageTargetCollector(app('router')), new ActingUserResolver, new RecordResolver, new TenantResolver, new FakeRequester) extends SmokeSweep
+    {
+        protected function isProduction(): bool
+        {
+            return true;
+        }
+    };
+
+    expect(fn () => $sweep->run())->toThrow(RuntimeException::class, 'production');
+});
+
 it('surfaces the real error when the acting user cannot be created', function () {
     $results = sweepWith([target()], new FakeRequester, function () {
         throw new RuntimeException('Could not verify the hashed value\'s configuration.');

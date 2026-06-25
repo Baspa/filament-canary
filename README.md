@@ -120,7 +120,18 @@ Tenant-aware panels resolve a tenant the same way (defaults to the tenant-model 
 'tenant' => fn (\Filament\Panel $panel) => \App\Models\Team::factory()->create(),
 ```
 
-Other options: `panels.only` / `panels.except`, `exclude` (resource/page classes), `test_guests`, `strict_authorization`. See the published config for details.
+Other options: `panels.only` / `panels.except`, `exclude` (resource/page classes), `test_guests`, `strict_authorization`, `use_transaction`. See the published config for details.
+
+## Safety
+
+The sweep creates users and records via factories and requests every page as an
+authenticated user, so it takes two precautions:
+
+- **It runs in a database transaction and rolls it back** — nothing it creates is
+  persisted. (Covers the default connection; disable with `use_transaction => false`.)
+- **It refuses to run in the `production` environment** — a rollback can't undo the other
+  side effects of hitting every page as an admin (queued jobs, mail, audit logs, writes on
+  other connections), so Canary simply won't run there.
 
 ## What's out of scope (on purpose)
 

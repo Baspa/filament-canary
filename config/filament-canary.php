@@ -33,6 +33,17 @@ return [
 
     /*
      |--------------------------------------------------------------------------
+     | Database transaction
+     |--------------------------------------------------------------------------
+     | The sweep creates users/records via factories. With this on, the whole run
+     | is wrapped in a transaction and rolled back, so nothing is persisted. Only
+     | the default connection is covered; canary always refuses to run in the
+     | production environment regardless of this setting.
+     */
+    'use_transaction' => true,
+
+    /*
+     |--------------------------------------------------------------------------
      | Strict authorization
      |--------------------------------------------------------------------------
      | When true, pages the resolved user could not reach (needs-auth) count as
