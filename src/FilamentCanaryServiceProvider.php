@@ -3,6 +3,7 @@
 namespace Baspa\FilamentCanary;
 
 use Baspa\FilamentCanary\Commands\CheckCommand;
+use Baspa\FilamentCanary\Commands\InstallCommand;
 use Baspa\FilamentCanary\Sweep\KernelRequester;
 use Baspa\FilamentCanary\Sweep\Requester;
 use Spatie\LaravelPackageTools\Package;
@@ -15,7 +16,10 @@ class FilamentCanaryServiceProvider extends PackageServiceProvider
         $package
             ->name('filament-canary')
             ->hasConfigFile()
-            ->hasCommand(CheckCommand::class);
+            ->hasCommands([
+                CheckCommand::class,
+                InstallCommand::class,
+            ]);
     }
 
     public function packageRegistered(): void

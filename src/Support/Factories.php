@@ -10,8 +10,6 @@ class Factories
 {
     /**
      * Whether the given model class can produce records via a factory.
-     *
-     * @param  class-string  $modelClass
      */
     public static function has(string $modelClass): bool
     {
@@ -19,15 +17,16 @@ class Factories
             && in_array(HasFactory::class, class_uses_recursive($modelClass), true);
     }
 
-    /**
-     * @param  class-string  $modelClass
-     */
     public static function make(string $modelClass): ?Model
     {
+        // method_exists narrows the type so PHPStan accepts the static call, and a
+        // model's own newFactory() override is still respected.
+        if (! method_exists($modelClass, 'factory')) {
+            return null;
+        }
+
         try {
-            // Dynamic callable so PHPStan doesn't need HasFactory on the base Model,
-            // and so a model's own newFactory() override is respected.
-            $factory = call_user_func([$modelClass, 'factory']);
+            $factory = $modelClass::factory();
 
             if (! $factory instanceof Factory) {
                 return null;

@@ -54,17 +54,16 @@ class ActingUserResolver
         return $user instanceof Authenticatable ? $user : null;
     }
 
-    /**
-     * @return class-string|null
-     */
     protected function guardModel(string $guard): ?string
     {
         $provider = config("auth.guards.{$guard}.provider");
 
-        if ($provider === null) {
+        if (! is_string($provider)) {
             return null;
         }
 
-        return config("auth.providers.{$provider}.model");
+        $model = config("auth.providers.{$provider}.model");
+
+        return is_string($model) ? $model : null;
     }
 }

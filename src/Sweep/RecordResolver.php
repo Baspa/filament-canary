@@ -11,9 +11,6 @@ use Illuminate\Database\Eloquent\Model;
  */
 class RecordResolver
 {
-    /**
-     * @param  class-string|null  $modelClass
-     */
     public function resolve(?string $modelClass): ?Model
     {
         if ($modelClass === null || ! Factories::has($modelClass)) {
