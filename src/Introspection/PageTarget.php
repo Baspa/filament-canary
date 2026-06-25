@@ -26,7 +26,11 @@ class PageTarget
         public readonly ?string $resourceClass = null,
     ) {}
 
-    /** Route parameters we cannot resolve automatically (anything beyond record/tenant). */
+    /**
+     * Route parameters we cannot resolve automatically (anything beyond record/tenant).
+     *
+     * @return list<string>
+     */
     public function unresolvableParameters(): array
     {
         return array_values(array_filter(

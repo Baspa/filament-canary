@@ -180,6 +180,10 @@ class AccessAnalyzer
 
     protected function methodSource(string $class, string $method): ?string
     {
+        if (! class_exists($class)) {
+            return null;
+        }
+
         try {
             $ref = new ReflectionClass($class);
 
