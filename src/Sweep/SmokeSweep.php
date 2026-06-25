@@ -58,7 +58,11 @@ class SmokeSweep
         $params = [];
 
         if ($target->tenantScoped) {
-            $tenant = $this->tenants->resolve($panel);
+            try {
+                $tenant = $this->tenants->resolve($panel);
+            } catch (\Throwable $e) {
+                return SweepResult::skipped($target, "could not create a tenant for panel [{$panel->getId()}]: ".$e->getMessage());
+            }
 
             if ($tenant === null) {
                 return SweepResult::skipped($target, "tenant required; configure filament-canary.tenant for panel [{$panel->getId()}]");
@@ -68,7 +72,11 @@ class SmokeSweep
         }
 
         if ($target->requiresRecord) {
-            $record = $this->records->resolve($target->modelClass);
+            try {
+                $record = $this->records->resolve($target->modelClass);
+            } catch (\Throwable $e) {
+                return SweepResult::skipped($target, "could not create a [{$target->modelClass}] record: ".$e->getMessage());
+            }
 
             if ($record === null) {
                 return SweepResult::skipped($target, "model [{$target->modelClass}] has no factory; cannot build a record for this page");
@@ -77,7 +85,11 @@ class SmokeSweep
             $params['record'] = $record;
         }
 
-        $user = $this->resolveUser($panel);
+        try {
+            $user = $this->resolveUser($panel);
+        } catch (\Throwable $e) {
+            return SweepResult::skipped($target, "could not create an authorized user for panel [{$panel->getId()}]: ".$e->getMessage());
+        }
 
         if ($user === null) {
             return SweepResult::skipped($target, "no authorized user; configure filament-canary.acting_as for panel [{$panel->getId()}] (guard [{$target->guard}])");
