@@ -128,6 +128,44 @@ Other options: `panels.only` / `panels.except`, `exclude` (resource/page classes
 - Filament v3 (this targets v4 and v5).
 - Non-Filament Laravel routes.
 
+## Non-standard authentication
+
+By default Canary authenticates each request by setting the resolved user on the panel's
+guard. That covers the common case (session/Eloquent guards). It does **not** fit panels
+whose access depends on custom state Canary can't see — for example a custom API/SSO guard,
+or a `canAccessPanel()` that checks **session data** rather than the user itself:
+
+```php
+public function canAccessPanel(Panel $panel): bool
+{
+    return session()->has('user') && session()->has('loginToken'); // Canary can't satisfy this by default
+}
+```
+
+For these, swap the requester. `Baspa\FilamentCanary\Sweep\Requester` is a one-method
+interface bound in the container, so you can bind your own implementation that establishes
+auth however your app needs it (seed the session, mint an API token, etc.):
+
+```php
+// e.g. in a test's setUp() or a service provider
+use Baspa\FilamentCanary\Sweep\Requester;
+
+$this->app->bind(Requester::class, MyRequester::class);
+```
+
+```php
+use Baspa\FilamentCanary\Sweep\Requester;
+use Illuminate\Contracts\Auth\Authenticatable;
+
+class MyRequester implements Requester
+{
+    public function get(string $url, ?Authenticatable $user, string $guard): int
+    {
+        // establish whatever state the panel's gate requires, then return the status code
+    }
+}
+```
+
 ## Testing
 
 ```bash
