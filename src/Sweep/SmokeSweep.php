@@ -55,10 +55,10 @@ class SmokeSweep
         try {
             return $this->sweepAll();
         } finally {
-            try {
+            // Only roll back if the transaction is still open: app code may have
+            // committed/closed it mid-sweep (e.g. DDL), leaving nothing to undo.
+            if (DB::transactionLevel() > 0) {
                 DB::rollBack();
-            } catch (\Throwable) {
-                // App code may have committed/closed the transaction mid-sweep; nothing to undo.
             }
         }
     }
