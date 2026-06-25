@@ -6,6 +6,8 @@ use Baspa\FilamentCanary\Install\ConfigWriter;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\EmailUser;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\FlagUser;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\RoleUser;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\Team;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\TenantUser;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\User;
 use Filament\Panel;
 
@@ -44,6 +46,17 @@ it('proposes a matching email for an allowlist gate', function () {
 
     expect($p->actingAsExpression)->toContain('@acme.test')
         ->and($p->confidence)->toBe('medium');
+});
+
+it('detects a role gate in tenancy methods when canAccessPanel is open', function () {
+    config()->set('auth.guards.web.provider', 'users');
+    config()->set('auth.providers.users.model', TenantUser::class);
+
+    $p = (new AccessAnalyzer)->analyze(Panel::make()->id('shop')->tenant(Team::class));
+
+    expect($p->needsActingAs)->toBeTrue()
+        ->and($p->actingAsExpression)->toContain("assignRole('owner')")
+        ->and($p->tenantExpression)->toContain('Team::factory');
 });
 
 it('writes a config block from proposals', function () {

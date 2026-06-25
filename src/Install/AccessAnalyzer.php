@@ -27,8 +27,19 @@ class AccessAnalyzer
         $source = $this->methodSource($userModel, 'canAccessPanel');
         $user = '\\'.ltrim($userModel, '\\');
 
-        // No gate / explicitly open → the default factory user already works.
+        // No panel gate / explicitly open. The default factory user passes canAccessPanel —
+        // but for a tenant panel the real gate often lives in getTenants/canAccessTenant,
+        // so look there before declaring the panel open.
         if ($source === null || $this->isOpen($source)) {
+            if ($panel->hasTenancy() && ($tenantRole = $this->detectTenancyRole($userModel))) {
+                return new AccessProposal(
+                    $panel->getId(), $panel->getAuthGuard(), $userModel, true,
+                    "fn (\\Filament\\Panel \$panel) => {$user}::factory()->create()->assignRole('{$tenantRole}')",
+                    $tenantExpression, 'medium',
+                    "canAccessPanel() is open, but tenant access requires role '{$tenantRole}' (from getTenants/canAccessTenant). Ensure that role exists.",
+                );
+            }
+
             return new AccessProposal(
                 $panel->getId(), $panel->getAuthGuard(), $userModel, false, null, $tenantExpression,
                 'high', $source === null
@@ -86,6 +97,25 @@ class AccessAnalyzer
     {
         if (preg_match('/has(?:Any)?Role\(\s*\[?\s*[\'"]([^\'"]+)[\'"]/', $source, $m)) {
             return $m[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Look for a role requirement in the tenancy gate (getTenants / canAccessTenant),
+     * used when canAccessPanel itself is open but tenant access is role-gated.
+     *
+     * @param  class-string  $userModel
+     */
+    protected function detectTenancyRole(string $userModel): ?string
+    {
+        foreach (['canAccessTenant', 'getTenants'] as $method) {
+            $source = $this->methodSource($userModel, $method);
+
+            if ($source !== null && ($role = $this->detectRole($source))) {
+                return $role;
+            }
         }
 
         return null;
