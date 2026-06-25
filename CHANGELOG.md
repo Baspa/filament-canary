@@ -2,6 +2,15 @@
 
 All notable changes to `:package_name` will be documented in this file.
 
+## v1.2.0 - 2026-06-25
+
+### Added — safe to run against real databases
+
+- **The sweep runs in a transaction and rolls it back**, so the users/records it creates via factories are never persisted (default connection). Opt out with `use_transaction => false`.
+- **It refuses to run in the `production` environment** — a rollback can't undo the other side effects of requesting every page as an admin (queued jobs, mail, audit logs, writes on secondary connections), so Canary won't run there.
+
+**Full changelog:** https://github.com/Baspa/filament-canary/compare/v1.1.0...v1.2.0
+
 ## v1.1.0 - 2026-06-25
 
 ### Added
