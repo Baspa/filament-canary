@@ -3,6 +3,8 @@
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\Post;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\User;
 
 /**
  * @return array<string, SweepResult> keyed by route name
@@ -65,4 +67,11 @@ it('has no hard failures across the fixture panel', function () {
 
 it('passes the InteractsWithCanary assertion helper', function () {
     $this->canarySweep();
+});
+
+it('rolls back every user and record it creates', function () {
+    app(SmokeSweep::class)->run();
+
+    expect(User::count())->toBe(0)
+        ->and(Post::count())->toBe(0);
 });
