@@ -72,6 +72,7 @@ class PageTargetCollector
     }
 
     /**
+     * @param  list<string>  $excludeResources
      * @return array<string, class-string> routeBaseName => resourceClass
      */
     protected function resourceRouteBaseMap(Panel $panel, array $excludeResources): array
@@ -91,7 +92,7 @@ class PageTargetCollector
 
     /**
      * @param  array<string, class-string>  $resourceByBase
-     * @return array{0: ?class-string, 1: ?class-string} [resourceClass, modelClass]
+     * @return array{0: ?class-string, 1: ?string} [resourceClass, modelClass]
      */
     protected function matchResource(string $routeName, array $resourceByBase): array
     {

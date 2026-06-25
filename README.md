@@ -1,6 +1,8 @@
 # Filament Canary
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/baspa/filament-canary.svg?style=flat-square)](https://packagist.org/packages/baspa/filament-canary)
+[![Tests](https://img.shields.io/github/actions/workflow/status/baspa/filament-canary/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/baspa/filament-canary/actions/workflows/run-tests.yml)
+[![PHPStan](https://img.shields.io/github/actions/workflow/status/baspa/filament-canary/phpstan.yml?branch=main&label=phpstan&style=flat-square)](https://github.com/baspa/filament-canary/actions/workflows/phpstan.yml)
 [![Total Downloads](https://img.shields.io/packagist/dt/baspa/filament-canary.svg?style=flat-square)](https://packagist.org/packages/baspa/filament-canary)
 
 A runtime smoke-sweep for your Filament panels. It introspects every panel, resource and page at runtime and asserts the one thing you almost never write tests for: **every page mounts for an authorized user, and is denied to guests.** No generated files, no drift — new resources are covered automatically, and it runs in CI on every PR.
@@ -19,7 +21,15 @@ It is deliberately **narrow**: it proves pages *mount and authorize*. It does no
 composer require baspa/filament-canary --dev
 ```
 
-Optionally publish the config:
+Then let Canary inspect your panels and propose a config for you:
+
+```bash
+php artisan canary:install
+```
+
+It reads each panel's access gate (the user model's `canAccessPanel`, plus tenancy) and proposes an `acting_as` resolver — `assignRole('admin')` for role gates, a matching email for allowlists, a factory flag for boolean gates, or a plain factory user when it can't tell (clearly marked, for you to adjust). After you confirm, it writes `config/filament-canary.php` with the proposed closures baked in. Decline, and it just prints the snippet to paste.
+
+Prefer to do it by hand? Publish the config and edit it yourself:
 
 ```bash
 php artisan vendor:publish --tag="filament-canary-config"

@@ -9,3 +9,9 @@ it('fails canary:check with --strict when pages need authorization', function ()
     // which --strict promotes to a failure.
     $this->artisan('canary:check --strict')->assertExitCode(1);
 });
+
+it('runs canary:install and prints a snippet when declined', function () {
+    $this->artisan('canary:install')
+        ->expectsConfirmation('Write these proposals to config/filament-canary.php?', 'no')
+        ->assertExitCode(0);
+});

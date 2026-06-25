@@ -33,9 +33,9 @@ class SmokeSweep
      */
     public function run(): array
     {
-        $only = (array) config('filament-canary.panels.only', []);
-        $except = (array) config('filament-canary.panels.except', []);
-        $exclude = (array) config('filament-canary.exclude', []);
+        $only = $this->stringList(config('filament-canary.panels.only', []));
+        $except = $this->stringList(config('filament-canary.panels.except', []));
+        $exclude = $this->stringList(config('filament-canary.exclude', []));
         $testGuests = (bool) config('filament-canary.test_guests', true);
 
         $results = [];
@@ -120,6 +120,18 @@ class SmokeSweep
         }
 
         return SweepResult::passed($target, $authorized, $guest);
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function stringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_map(strval(...), $value));
     }
 
     /**
