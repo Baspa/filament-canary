@@ -30,9 +30,9 @@ class FakeRequester implements Requester
 /**
  * @param  list<PageTarget>  $targets
  */
-function sweepWith(array $targets, Requester $requester): array
+function sweepWith(array $targets, Requester $requester, ?callable $actingAs = null): array
 {
-    config()->set('filament-canary.acting_as', fn (Panel $panel) => new GenericUser(['id' => 1]));
+    config()->set('filament-canary.acting_as', $actingAs ?? fn (Panel $panel) => new GenericUser(['id' => 1]));
 
     $panel = Panel::make()->id('admin');
 
@@ -124,4 +124,14 @@ it('skips pages with route parameters it cannot resolve', function () {
 
     expect($results[0]->status)->toBe(SweepStatus::Skipped)
         ->and($results[0]->reason)->toContain('cannot resolve');
+});
+
+it('surfaces the real error when the acting user cannot be created', function () {
+    $results = sweepWith([target()], new FakeRequester, function () {
+        throw new RuntimeException('Could not verify the hashed value\'s configuration.');
+    });
+
+    expect($results[0]->status)->toBe(SweepStatus::Skipped)
+        ->and($results[0]->reason)->toContain('could not create an authorized user')
+        ->and($results[0]->reason)->toContain('hashed value');
 });

@@ -17,6 +17,11 @@ class Factories
             && in_array(HasFactory::class, class_uses_recursive($modelClass), true);
     }
 
+    /**
+     * Create a record via the model's factory. Returns null only when there is no
+     * factory to call; any error raised while creating the record is allowed to
+     * propagate so the caller can surface the real reason instead of hiding it.
+     */
     public static function make(string $modelClass): ?Model
     {
         // method_exists narrows the type so PHPStan accepts the static call, and a
@@ -25,18 +30,14 @@ class Factories
             return null;
         }
 
-        try {
-            $factory = $modelClass::factory();
+        $factory = $modelClass::factory();
 
-            if (! $factory instanceof Factory) {
-                return null;
-            }
-
-            $record = $factory->create();
-
-            return $record instanceof Model ? $record : null;
-        } catch (\Throwable) {
+        if (! $factory instanceof Factory) {
             return null;
         }
+
+        $record = $factory->create();
+
+        return $record instanceof Model ? $record : null;
     }
 }
