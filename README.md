@@ -7,6 +7,7 @@
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/baspa/filament-canary.svg?style=flat-square)](https://packagist.org/packages/baspa/filament-canary)
 [![Tests](https://img.shields.io/github/actions/workflow/status/baspa/filament-canary/run-tests.yml?branch=main&label=tests&style=flat-square)](https://github.com/baspa/filament-canary/actions/workflows/run-tests.yml)
 [![PHPStan](https://img.shields.io/github/actions/workflow/status/baspa/filament-canary/phpstan.yml?branch=main&label=phpstan&style=flat-square)](https://github.com/baspa/filament-canary/actions/workflows/phpstan.yml)
+[![Code Coverage](https://img.shields.io/codecov/c/github/baspa/filament-canary?style=flat-square)](https://codecov.io/gh/baspa/filament-canary)
 [![Total Downloads](https://img.shields.io/packagist/dt/baspa/filament-canary.svg?style=flat-square)](https://packagist.org/packages/baspa/filament-canary)
 
 A runtime smoke-sweep for your Filament panels. It introspects every panel, resource and page at runtime and asserts the one thing you almost never write tests for: **every page mounts for an authorized user, and is denied to guests.** No generated files, no drift — new resources are covered automatically, and it runs in CI on every PR.
