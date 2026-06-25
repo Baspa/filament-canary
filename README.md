@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="art/banner.png" alt="Filament Canary" width="100%">
+</p>
+
 # Filament Canary
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/baspa/filament-canary.svg?style=flat-square)](https://packagist.org/packages/baspa/filament-canary)
