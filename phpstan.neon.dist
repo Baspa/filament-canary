@@ -1,0 +1,9 @@
+parameters:
+    level: 5
+    paths:
+        - src
+        - config
+    # Consumer-facing test helper: used in users' test suites, not within the package.
+    excludePaths:
+        - src/Testing/InteractsWithCanary.php
+    tmpDir: build/phpstan
