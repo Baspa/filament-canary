@@ -17,14 +17,14 @@ It is deliberately **narrow**: it proves pages *mount and authorize*. It does no
 
 ## Why not just ask AI to generate the tests?
 
-You can — and for the app-specific parts (form validation, business rules) you probably should. But "every page still mounts and authorizes" is a *standing guarantee*, not a one-time task, and that's a poor fit for one-shot generation:
+You can — an AI agent can even keep generated tests up to date as you build. For the app-specific parts (form validation, business rules) that's a great use of it. The difference isn't "AI can't keep up." It's that "every page still mounts and authorizes" is a *standing guarantee* that shouldn't depend on someone remembering to ask:
 
-- **AI writes tests once; Canary enforces forever.** Add a resource next month and AI doesn't know. Canary's sweep already covers it and fails CI if it breaks.
-- **Deterministic and reviewable.** The same sweep runs identically on every machine and every PR — no per-developer variation, no tokens spent, no prompt to babysit.
-- **Zero files to maintain.** AI-generated test files are still files: they drift against Filament upgrades and renamed resources. Canary holds none — it reads the live panel.
-- **It's a drift detector, not just a test.** The moment a new page isn't covered or starts throwing, the same mechanism that provides coverage is the thing that fails the build.
+- **It runs with no AI in the loop.** A junior adding a resource, a Dependabot PR bumping Filament, a teammate without an agent, CI itself — they all get the coverage for free. No "don't forget to regenerate the tests."
+- **No per-change review step.** AI-updated tests have to be re-read every time — did it cover the new page, did it pass for the right reason? The sweep is reviewed once; new pages flow through it automatically.
+- **The failure mode is the exception.** It breaks precisely the one time you *don't* ask — a hotfix, a rename buried in a big diff, someone else's PR. The sweep has no "remember to" step.
+- **Zero generated files.** Even AI-maintained test files are files that can half-update or conflict. Canary holds none — it reads the live panel each run.
 
-Think of it as infrastructure (a health check over your whole panel) rather than a batch of generated tests. Use AI for the deep, bespoke tests; let Canary hold the line on "nothing is silently broken or unprotected."
+So it's not AI vs. Canary. Use AI for the deep, bespoke tests; let Canary make the one mechanical guarantee — "every page loads and authorizes" — *structural* instead of dependent on a human-plus-agent getting it right every single time.
 
 ## Installation
 
