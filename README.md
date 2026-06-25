@@ -19,7 +19,15 @@ It is deliberately **narrow**: it proves pages *mount and authorize*. It does no
 composer require baspa/filament-canary --dev
 ```
 
-Optionally publish the config:
+Then let Canary inspect your panels and propose a config for you:
+
+```bash
+php artisan canary:install
+```
+
+It reads each panel's access gate (the user model's `canAccessPanel`, plus tenancy) and proposes an `acting_as` resolver — `assignRole('admin')` for role gates, a matching email for allowlists, a factory flag for boolean gates, or a plain factory user when it can't tell (clearly marked, for you to adjust). After you confirm, it writes `config/filament-canary.php` with the proposed closures baked in. Decline, and it just prints the snippet to paste.
+
+Prefer to do it by hand? Publish the config and edit it yourself:
 
 ```bash
 php artisan vendor:publish --tag="filament-canary-config"
