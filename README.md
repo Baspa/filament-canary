@@ -15,6 +15,17 @@ Because generated tests rot. Filament is *introspectable* — `Filament::getPane
 
 It is deliberately **narrow**: it proves pages *mount and authorize*. It does not submit forms or assert CRUD — that's the genuinely app-specific part you should write by hand.
 
+## Why not just ask AI to generate the tests?
+
+You can — and for the app-specific parts (form validation, business rules) you probably should. But "every page still mounts and authorizes" is a *standing guarantee*, not a one-time task, and that's a poor fit for one-shot generation:
+
+- **AI writes tests once; Canary enforces forever.** Add a resource next month and AI doesn't know. Canary's sweep already covers it and fails CI if it breaks.
+- **Deterministic and reviewable.** The same sweep runs identically on every machine and every PR — no per-developer variation, no tokens spent, no prompt to babysit.
+- **Zero files to maintain.** AI-generated test files are still files: they drift against Filament upgrades and renamed resources. Canary holds none — it reads the live panel.
+- **It's a drift detector, not just a test.** The moment a new page isn't covered or starts throwing, the same mechanism that provides coverage is the thing that fails the build.
+
+Think of it as infrastructure (a health check over your whole panel) rather than a batch of generated tests. Use AI for the deep, bespoke tests; let Canary hold the line on "nothing is silently broken or unprotected."
+
 ## Installation
 
 ```bash
