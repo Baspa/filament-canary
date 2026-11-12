@@ -49,7 +49,7 @@ class TestCase extends Orchestra
         $app['config']->set('auth.providers.users.model', User::class);
 
         // Fixture panels are opt-in: a test that sweeps one sets panels.only itself.
-        $app['config']->set('filament-canary.panels.only', ['admin']);
+        $app['config']->set('filament-canary.panels', ['only' => ['admin'], 'except' => []]);
     }
 
     protected function defineDatabaseMigrations(): void
