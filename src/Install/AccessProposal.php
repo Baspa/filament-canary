@@ -14,12 +14,14 @@ class AccessProposal
         public readonly ?string $userModel,
         /** Whether an acting_as resolver is needed at all (false when the panel is open). */
         public readonly bool $needsActingAs,
-        /** PHP source for the acting_as closure, or null when none is needed. */
+        /** PHP expression the acting_as resolver returns ($panel in scope), or null when none is needed. */
         public readonly ?string $actingAsExpression,
-        /** PHP source for the tenant closure, or null when the panel has no tenancy. */
+        /** PHP expression the tenant resolver returns ($panel and $user in scope), or null when the default tenant will do. */
         public readonly ?string $tenantExpression,
         /** high | medium | low | none */
         public readonly string $confidence,
         public readonly string $explanation,
+        /** How the panel's tenant is handled, or null without tenancy. */
+        public readonly ?string $tenantExplanation = null,
     ) {}
 }

@@ -2,6 +2,8 @@
 
 namespace Baspa\FilamentCanary\Install;
 
+use Baspa\FilamentCanary\Support\TenantMembership;
+use Closure;
 use Filament\Panel;
 use ReflectionClass;
 
@@ -15,13 +17,15 @@ class AccessAnalyzer
     public function analyze(Panel $panel): AccessProposal
     {
         $userModel = $this->guardModel($panel->getAuthGuard());
-        $tenantExpression = $this->tenantExpression($panel);
+        [$tenantExpression, $tenantExplanation] = $this->proposeTenant($panel, $userModel);
+
+        $propose = fn (bool $needsActingAs, ?string $actingAsExpression, string $confidence, string $explanation) => new AccessProposal(
+            $panel->getId(), $panel->getAuthGuard(), $userModel, $needsActingAs, $actingAsExpression,
+            $tenantExpression, $confidence, $explanation, $tenantExplanation,
+        );
 
         if ($userModel === null) {
-            return new AccessProposal(
-                $panel->getId(), $panel->getAuthGuard(), null, true, null, $tenantExpression,
-                'none', "Could not resolve a user model for guard [{$panel->getAuthGuard()}]; set acting_as manually.",
-            );
+            return $propose(true, null, 'none', "Could not resolve a user model for guard [{$panel->getAuthGuard()}]; set acting_as manually.");
         }
 
         $source = $this->methodSource($userModel, 'canAccessPanel');
@@ -32,36 +36,24 @@ class AccessAnalyzer
         // so look there before declaring the panel open.
         if ($source === null || $this->isOpen($source)) {
             if ($panel->hasTenancy() && ($tenantRole = $this->detectTenancyRole($userModel))) {
-                return new AccessProposal(
-                    $panel->getId(), $panel->getAuthGuard(), $userModel, true,
-                    "fn (\\Filament\\Panel \$panel) => {$user}::factory()->create()->assignRole('{$tenantRole}')",
-                    $tenantExpression, 'medium',
-                    "canAccessPanel() is open, but tenant access requires role '{$tenantRole}' (from getTenants/canAccessTenant). Ensure that role exists.",
+                return $this->proposeRole(
+                    $propose, $userModel, $tenantRole, 'medium',
+                    "canAccessPanel() is open, but tenant access requires role '{$tenantRole}' (from getTenants/canAccessTenant).",
                 );
             }
 
-            return new AccessProposal(
-                $panel->getId(), $panel->getAuthGuard(), $userModel, false, null, $tenantExpression,
-                'high', $source === null
-                    ? 'No canAccessPanel() override found; a plain factory user should work.'
-                    : 'canAccessPanel() returns true; a plain factory user should work.',
-            );
+            return $propose(false, null, 'high', $source === null
+                ? 'No canAccessPanel() override found; a plain factory user should work.'
+                : 'canAccessPanel() returns true; a plain factory user should work.');
         }
 
         if ($role = $this->detectRole($source)) {
-            return new AccessProposal(
-                $panel->getId(), $panel->getAuthGuard(), $userModel, true,
-                "fn (\\Filament\\Panel \$panel) => {$user}::factory()->create()->assignRole('{$role}')",
-                $tenantExpression, 'high',
-                "Role-based access detected (assignRole('{$role}')). Ensure that role exists (seed it or your TestCase seeds roles).",
-            );
+            return $this->proposeRole($propose, $userModel, $role, 'high', "Role-based access detected (role '{$role}').");
         }
 
         if ($column = $this->detectBooleanFlag($source)) {
-            return new AccessProposal(
-                $panel->getId(), $panel->getAuthGuard(), $userModel, true,
-                "fn (\\Filament\\Panel \$panel) => {$user}::factory()->create(['{$column}' => true])",
-                $tenantExpression, 'medium',
+            return $propose(
+                true, "{$user}::factory()->create(['{$column}' => true])", 'medium',
                 "Boolean flag access detected ([{$column}]). Adjust if your factory needs a different value.",
             );
         }
@@ -70,19 +62,36 @@ class AccessAnalyzer
             $domain = $this->detectEmailDomain($source);
             $email = $domain ? "admin{$domain}" : 'admin@example.test';
 
-            return new AccessProposal(
-                $panel->getId(), $panel->getAuthGuard(), $userModel, true,
-                "fn (\\Filament\\Panel \$panel) => {$user}::factory()->create(['email' => '{$email}'])",
-                $tenantExpression, 'medium',
+            return $propose(
+                true, "{$user}::factory()->create(['email' => '{$email}'])", 'medium',
                 'Email-based access detected. Replace the email with one your allowlist accepts.',
             );
         }
 
-        return new AccessProposal(
-            $panel->getId(), $panel->getAuthGuard(), $userModel, true,
-            "fn (\\Filament\\Panel \$panel) => {$user}::factory()->create()",
-            $tenantExpression, 'low',
+        return $propose(
+            true, "{$user}::factory()->create()", 'low',
             "Could not read the access gate confidently; using a plain factory user. Adjust if this panel's pages come back as needs-auth.",
+        );
+    }
+
+    /**
+     * @param  Closure(bool, ?string, string, string): AccessProposal  $propose
+     */
+    protected function proposeRole(Closure $propose, string $userModel, string $role, string $confidence, string $detected): AccessProposal
+    {
+        $user = '\\'.ltrim($userModel, '\\');
+
+        // An app's own hasRole() often comes without spatie/laravel-permission's assignRole().
+        if (! method_exists($userModel, 'assignRole')) {
+            return $propose(
+                true, "{$user}::factory()->create()", 'low',
+                "{$detected} ".class_basename($userModel)." has no assignRole(), so this is a plain factory user: give it role '{$role}' in the acting_as class.",
+            );
+        }
+
+        return $propose(
+            true, "{$user}::factory()->create()->assignRole('{$role}')", $confidence,
+            "{$detected} Ensure that role exists (seed it or your TestCase seeds roles).",
         );
     }
 
@@ -149,19 +158,27 @@ class AccessAnalyzer
         return null;
     }
 
-    protected function tenantExpression(Panel $panel): ?string
+    /**
+     * @return array{0: ?string, 1: ?string} [expression, explanation]
+     */
+    protected function proposeTenant(Panel $panel, ?string $userModel): array
     {
-        if (! $panel->hasTenancy()) {
-            return null;
-        }
-
-        $tenantModel = $panel->getTenantModel();
+        $tenantModel = $panel->hasTenancy() ? $panel->getTenantModel() : null;
 
         if ($tenantModel === null) {
-            return null;
+            return [null, null];
         }
 
-        return 'fn (\\Filament\\Panel $panel) => \\'.ltrim($tenantModel, '\\').'::factory()->create()';
+        $relation = $userModel === null ? null : TenantMembership::relation($tenantModel, $userModel);
+
+        if ($relation !== null) {
+            return [null, "The default tenant attaches the acting user via {$relation}()."];
+        }
+
+        return [
+            '\\'.ltrim($tenantModel, '\\').'::factory()->create()',
+            'No many-to-many relation from the tenant to the user model found: the generated class has to attach $user itself.',
+        ];
     }
 
     /**

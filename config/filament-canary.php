@@ -68,16 +68,29 @@ return [
      |--------------------------------------------------------------------------
      | How to build the user that should be able to reach a panel's pages. By default
      | canary creates one via the guard's provider-model factory. Override when panel
-     | access needs a specific user (a role, a flag):
+     | access needs a specific user (a role, a flag) with an invokable class: it gets
+     | the panel and returns the user. `php artisan canary:install` generates one in
+     | tests/Canary. Only the class name is stored here, so production doesn't need it.
      |
-     |   'acting_as' => fn (\Filament\Panel $panel) => User::factory()->admin()->create(),
+     |   'acting_as' => \Tests\Canary\AdminActingAs::class,
      |
-     | Or per panel:
+     |   class AdminActingAs
+     |   {
+     |       public function __invoke(Panel $panel): Authenticatable
+     |       {
+     |           return User::factory()->admin()->create();
+     |       }
+     |   }
+     |
+     | Or per panel, with an optional fallback for the other panels:
      |
      |   'acting_as' => [
-     |       'admin'   => fn ($panel) => User::factory()->admin()->create(),
-     |       'default' => fn ($panel) => User::factory()->create(),
+     |       'admin'   => \Tests\Canary\AdminActingAs::class,
+     |       'default' => \Tests\Canary\DefaultActingAs::class,
      |   ],
+     |
+     | A closure (fn (Panel $panel) => ...) works too, but only from a test via
+     | config()->set(): a closure in this file breaks `php artisan config:cache`.
      */
     'acting_as' => null,
 
@@ -85,10 +98,22 @@ return [
      |--------------------------------------------------------------------------
      | Tenant resolver
      |--------------------------------------------------------------------------
-     | For tenant-aware panels, how to build the tenant used in URLs. Defaults to the
-     | tenant-model factory. Accepts a closure or a per-panel array, like `acting_as`.
+     | For tenant-aware panels, how to build the tenant used in URLs. By default canary
+     | creates one with the tenant-model factory and attaches the acting user through
+     | the tenant's many-to-many relation to the user model: `members()`, `users()` or
+     | the user model's plural (`teamMembers()` for TeamMember). Configure a resolver
+     | when there is no such relation, or when access depends on more. It accepts the
+     | same values as `acting_as` and gets the panel and the acting user:
      |
-     |   'tenant' => fn (\Filament\Panel $panel) => Team::factory()->create(),
+     |   'tenant' => \Tests\Canary\AdminTenant::class,
+     |
+     |   class AdminTenant
+     |   {
+     |       public function __invoke(Panel $panel, Authenticatable $user): Model
+     |       {
+     |           return Team::factory()->hasAttached($user, ['role' => 'owner'], 'members')->create();
+     |       }
+     |   }
      */
     'tenant' => null,
 
