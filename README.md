@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="art/banner.png" alt="Filament Canary" width="100%">
+  <img src="art/banner.jpg" alt="Filament Canary" width="100%">
 </p>
 
 # Filament Canary
@@ -10,7 +10,7 @@
 [![Code Coverage](https://img.shields.io/codecov/c/github/baspa/filament-canary?style=flat-square)](https://codecov.io/gh/baspa/filament-canary)
 [![Total Downloads](https://img.shields.io/packagist/dt/baspa/filament-canary.svg?style=flat-square)](https://packagist.org/packages/baspa/filament-canary)
 
-A runtime smoke-sweep for your Filament panels. It introspects every panel, resource and page at runtime and asserts the one thing you almost never write tests for: **every page mounts for an authorized user, and is denied to guests.** No generated files, no drift — new resources are covered automatically, and it runs in CI on every PR.
+A runtime smoke-sweep for your Filament panels. It introspects every panel, resource and page at runtime and asserts the one thing you almost never write tests for: **every page mounts for an authorized user, and is denied to guests.** No generated test files, no drift — new resources are covered automatically, and it runs in CI on every PR.
 
 A canary in the coal mine: if a page starts throwing a 500 or quietly leaks access, the sweep falls over before your users do.
 
@@ -20,18 +20,11 @@ Because generated tests rot. Filament is *introspectable* — `Filament::getPane
 
 It is deliberately **narrow**: it proves pages *mount and authorize*. It does not submit forms or assert CRUD — that's the genuinely app-specific part you should write by hand.
 
-## Why not just ask AI to generate the tests?
-
-You can — an AI agent can even keep generated tests up to date as you build. For the app-specific parts (form validation, business rules) that's a great use of it. The difference isn't "AI can't keep up." It's that "every page still mounts and authorizes" is a *standing guarantee* that shouldn't depend on someone remembering to ask:
-
-- **It runs with no AI in the loop.** A junior adding a resource, a Dependabot PR bumping Filament, a teammate without an agent, CI itself — they all get the coverage for free. No "don't forget to regenerate the tests."
-- **No per-change review step.** AI-updated tests have to be re-read every time — did it cover the new page, did it pass for the right reason? The sweep is reviewed once; new pages flow through it automatically.
-- **The failure mode is the exception.** It breaks precisely the one time you *don't* ask — a hotfix, a rename buried in a big diff, someone else's PR. The sweep has no "remember to" step.
-- **Zero generated files.** Even AI-maintained test files are files that can half-update or conflict. Canary holds none — it reads the live panel each run.
-
-So it's not AI vs. Canary. Use AI for the deep, bespoke tests; let Canary make the one mechanical guarantee — "every page loads and authorizes" — *structural* instead of dependent on a human-plus-agent getting it right every single time.
+The same goes for tests an AI agent writes or keeps up to date: someone still has to ask for them and review them. The sweep needs neither, so a teammate's PR, a Filament upgrade or a hotfix is covered without anyone remembering to regenerate anything.
 
 ## Installation
+
+Requires PHP 8.3+, Laravel 12 or 13, and Filament 4 or 5.
 
 ```bash
 composer require baspa/filament-canary --dev
@@ -43,7 +36,11 @@ Then let Canary inspect your panels and propose a config for you:
 php artisan canary:install
 ```
 
-It reads each panel's access gate (the user model's `canAccessPanel`, plus tenancy) and proposes an `acting_as` resolver — `assignRole('admin')` for role gates, a matching email for allowlists, a factory flag for boolean gates, or a plain factory user when it can't tell (clearly marked, for you to adjust). After you confirm, it writes `config/filament-canary.php` with the proposed closures baked in. Decline, and it just prints the snippet to paste.
+It reads each panel's access gate (the user model's `canAccessPanel`, plus tenancy) and proposes an `acting_as` resolver: `assignRole('admin')` for role gates (when the user model has `assignRole()`), a matching email for allowlists, a factory flag for boolean gates, or a plain factory user when it can't tell (clearly marked, for you to adjust). For a tenant panel it writes no tenant class when the tenant model has a many-to-many membership relation to the user model (see [Configuration](#configuration)), because the default tenant already attaches the acting user. Without that relation, it writes a `tenant` stub that you finish by attaching the acting user.
+
+After you confirm, it writes each resolver as an invokable class in `tests/Canary/` and puts the class names in `config/filament-canary.php`. The classes get the namespace that `autoload-dev` in `composer.json` maps to `tests/`, plus `Canary` (`Tests\Canary` when there is no such mapping), so that mapping must exist for them to load.
+
+It asks before overwriting an existing file. An overwritten config keeps the current values of the package's options, but writes them as plain values: `env()` calls are frozen to their current value, closures and objects go back to the default (with a warning), and custom keys and comments are dropped. Decline, and nothing is written: it prints the classes and the config entries instead.
 
 Prefer to do it by hand? Publish the config and edit it yourself:
 
@@ -57,15 +54,16 @@ php artisan vendor:publish --tag="filament-canary-config"
 
 ```php
 use Baspa\FilamentCanary\Testing\InteractsWithCanary;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(InteractsWithCanary::class);
+uses(RefreshDatabase::class, InteractsWithCanary::class);
 
 it('every Filament page mounts and authorizes', function () {
     $this->canarySweep();
 });
 ```
 
-`canarySweep()` runs the whole sweep and fails the test if any page returned a server error or leaked access to a guest. It returns every result, so you can make extra assertions if you want.
+`canarySweep()` runs the whole sweep and fails the test when the sweep fails (see [How a page is judged](#how-a-page-is-judged)). It returns every result, so you can make extra assertions if you want. `RefreshDatabase` gives the sweep a migrated database; leave it out of `uses()` if your `Pest.php` already applies it.
 
 ### As a CI command
 
@@ -73,54 +71,140 @@ it('every Filament page mounts and authorizes', function () {
 php artisan canary:check
 ```
 
-Prints a per-page report and exits non-zero when there are hard failures:
+Prints a per-page report and exits non-zero when the sweep fails:
 
 ```
-  ✅  admin   filament.admin.resources.posts.index    authorized: 200, guest: 302
-  ✅  admin   filament.admin.resources.posts.edit     authorized: 200, guest: 302
-  🔒  admin   filament.admin.resources.audits.index   authorized user was denied (403); configure filament-canary.acting_as
-  ⏭️  admin   filament.admin.resources.tags.edit      model [App\Models\Tag] has no factory; cannot build a record
-  ❌  admin   filament.admin.resources.orders.index   authorized request returned 500
++----+-------+----------------------------------------------+-----------------------------------------------------------------------------------------+
+|    | Panel | Page                                         | Detail                                                                                  |
++----+-------+----------------------------------------------+-----------------------------------------------------------------------------------------+
+| ✅ | admin | filament.admin.pages.dashboard               | authorized: 200, guest: 302                                                             |
+| ✅ | admin | filament.admin.resources.posts.index         | authorized: 200, guest: 302                                                             |
+| ✅ | admin | filament.admin.resources.posts.create        | authorized: 200, guest: 302                                                             |
+| ✅ | admin | filament.admin.resources.posts.view          | authorized: 200, guest: 302                                                             |
+| ✅ | admin | filament.admin.resources.posts.edit          | authorized: 200, guest: 302                                                             |
+| ✅ | admin | filament.admin.resources.tags.index          | authorized: 200, guest: 302                                                             |
+| ⏭️ | admin | filament.admin.resources.tags.edit           | model […\Models\Tag] has no factory; cannot build a record for this page                |
+| 🔒 | admin | filament.admin.resources.secrets.index       | authorized user was denied (403); configure filament-canary.acting_as for panel [admin] |
+| ❌ | lazy  | filament.lazy.pages.dashboard                | authorized request returned 500                                                         |
+| ❌ | lazy  | filament.lazy.resources.deferred-posts.index | authorized request returned 500                                                         |
++----+-------+----------------------------------------------+-----------------------------------------------------------------------------------------+
 
-  ✅ 12 passed   ❌ 1 failed   🔒 1 needs-auth   ⏭️ 2 skipped
+✅ 6 passed   ❌ 2 failed   🔒 1 needs-auth   ⏭️ 1 skipped
 ```
 
-Pass `--strict` to also fail on `needs-auth` pages once you've wired up `acting_as`.
+Pass `--strict` to also fail on `needs-auth` pages once you've wired up `acting_as`, and `--fail-on-skipped` to fail on skipped pages. To make either permanent, and to apply it to `canarySweep()` as well, set `strict_authorization` or `fail_on_skipped` in the config.
+
+`canary:check` uses the app's configured database and doesn't run migrations. On an empty database every page is skipped, so the sweep fails. If the database doesn't exist at all, such as a missing sqlite file, the command stops with a database error before it judges any page. Migrate a file-based test database first; `:memory:` won't work, because `migrate` and `canary:check` run in separate processes. In GitHub Actions:
+
+```yaml
+- name: Canary sweep
+  env:
+    APP_ENV: testing
+    DB_CONNECTION: sqlite
+    DB_DATABASE: ${{ github.workspace }}/database/canary.sqlite
+  run: |
+    cp .env.example .env
+    php artisan key:generate
+    php artisan migrate --force
+    php artisan canary:check
+```
+
+If your tests already run in CI, prefer the test-suite route: `RefreshDatabase` migrates for you.
 
 ## How a page is judged
 
+Canary sweeps every GET route a panel registers under `filament.{panel}.`. That includes the dashboard, custom pages, resource pages, the profile page, tenant registration and tenant profile pages, and GET routes that plugins add there. It skips two kinds of route:
+
+- the panel's `auth` routes (login, registration, password reset, email verification and the like), except the profile page;
+- `filament.{panel}.home` and `filament.{panel}.tenant`, which only redirect to another page.
+
+To leave out any other page, add it to `exclude` (see [Configuration](#configuration)).
+
+Each page is first requested as the authorized user. Only a 2xx is followed by a guest request (when `test_guests` is on), so a page that fails, needs auth or is skipped on the authorized request gets no guest check. Lazy widgets, lazy relation managers and deferred tables render during the authorized request, so an error in them fails the page too.
+
 | Result | Meaning |
 | --- | --- |
-| ✅ **passed** | Authorized user got a 2xx **and** a guest was denied (redirect / 401 / 403). |
-| ❌ **failed** | Server error (5xx), or a guest reached the page (authorization leak). The canary's whole reason for existing. |
-| 🔒 **needs-auth** | The resolved user couldn't reach the page (401/403/redirect). Almost always means you need to configure `acting_as`. Not a hard failure unless `--strict`. |
-| ⏭️ **skipped** | Couldn't be swept automatically — no model factory for a record page, a tenant that needs a resolver, or route parameters Canary can't fill. Always shown with a reason; nothing is silently left untested. |
+| ✅ **passed** | Authorized user got a 2xx **and** a guest was denied (redirect / 401 / 403). With `test_guests` off, the 2xx alone passes. |
+| ❌ **failed** | The authorized user got a 5xx, or a 4xx other than 401/403 (except the 404 under skipped). Or a guest got a 2xx (an authorization leak), or any other status that isn't a redirect, 401 or 403, such as a 404 or a 5xx. The canary's whole reason for existing. |
+| 🔒 **needs-auth** | The resolved user couldn't reach the page (redirect / 401 / 403). Almost always means you need to configure `acting_as`. Fails the sweep only in strict mode. |
+| ⏭️ **skipped** | Couldn't be swept automatically. Causes: no authorized user (no `acting_as` and no factory for the guard's user model), no tenant (no `tenant` resolver and no tenant factory), a resolver that failed, a record that couldn't be created (no factory, or it threw), route parameters Canary can't fill, a URL that couldn't be built, or a 404 on a record or tenant page (the reason names the likely cause). Always shown with a reason. Fails the sweep only with `fail_on_skipped`. |
+
+The sweep as a whole also fails when it found no pages, or when no page passed: a run where everything was skipped proves nothing. `canary:check` and `canarySweep()` apply the same rules.
 
 ## Configuration
 
-By default Canary creates an authorized user via your guard's provider-model factory. When panel access needs a specific user (a role, a flag), give it one:
+By default Canary creates the authorized user with your guard's provider-model factory. When panel access needs a specific user (a role, a flag), point `acting_as` at an invokable class. It gets the panel and returns the user:
 
 ```php
 // config/filament-canary.php
-'acting_as' => fn (\Filament\Panel $panel) => \App\Models\User::factory()->admin()->create(),
+'acting_as' => \Tests\Canary\AdminActingAs::class,
 ```
 
-Per panel:
+```php
+// tests/Canary/AdminActingAs.php
+namespace Tests\Canary;
+
+use App\Models\User;
+use Filament\Panel;
+use Illuminate\Contracts\Auth\Authenticatable;
+
+class AdminActingAs
+{
+    public function __invoke(Panel $panel): Authenticatable
+    {
+        return User::factory()->admin()->create();
+    }
+}
+```
+
+The config only holds the class name, so production never needs the class.
+
+Per panel, with an optional `default` for the other panels:
 
 ```php
 'acting_as' => [
-    'admin'   => fn ($panel) => \App\Models\User::factory()->admin()->create(),
-    'default' => fn ($panel) => \App\Models\User::factory()->create(),
+    'admin' => \Tests\Canary\AdminActingAs::class,
+    'default' => \Tests\Canary\DefaultActingAs::class,
 ],
 ```
 
-Tenant-aware panels resolve a tenant the same way (defaults to the tenant-model factory):
+A panel without an entry gets the factory user.
+
+Tenant-aware panels also need a tenant. By default Canary creates one with the tenant model's factory, and attaches the acting user when the tenant model has a many-to-many `members()` or `users()` relation (or one named after the user model). When there is no such relation, or membership needs more, such as a pivot value, set a `tenant` resolver. It takes the same values as `acting_as`, and gets the panel and the acting user, which Canary resolves first:
 
 ```php
-'tenant' => fn (\Filament\Panel $panel) => \App\Models\Team::factory()->create(),
+// config/filament-canary.php
+'tenant' => \Tests\Canary\TeamTenant::class,
 ```
 
-Other options: `panels.only` / `panels.except`, `exclude` (resource/page classes), `test_guests`, `strict_authorization`, `use_transaction`. See the published config for details.
+```php
+// tests/Canary/TeamTenant.php
+namespace Tests\Canary;
+
+use App\Models\Team;
+use Filament\Panel;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Model;
+
+class TeamTenant
+{
+    public function __invoke(Panel $panel, Authenticatable $user): Model
+    {
+        return Team::factory()->hasAttached($user, ['role' => 'owner'], 'members')->create();
+    }
+}
+```
+
+Use class names, not closures, in `config/filament-canary.php`: Laravel can't serialize a closure, so `php artisan config:cache` fails. In a test, a closure works through `config()->set()`:
+
+```php
+use App\Models\User;
+use Filament\Panel;
+
+config()->set('filament-canary.acting_as', fn (Panel $panel) => User::factory()->admin()->create());
+```
+
+Other options: `panels.only` / `panels.except` pick the panels to sweep. `exclude` takes Resource classes (all of their pages) and Page or controller classes (that route only, such as `Dashboard::class`, `EditProfile::class` or a plugin's page), and applies to every panel. `test_guests`, `strict_authorization`, `fail_on_skipped` and `use_transaction` are explained in the published config.
 
 ## Safety
 
