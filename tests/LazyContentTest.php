@@ -21,9 +21,12 @@ afterEach(function () {
 
 function lazyPanelResult(string $routeName): SweepResult
 {
-    $results = collect(app(SmokeSweep::class)->run());
+    $result = collect(app(SmokeSweep::class)->run())
+        ->first(fn (SweepResult $result) => $result->target->routeName === $routeName);
 
-    return $results->first(fn (SweepResult $result) => $result->target->routeName === $routeName);
+    expect($result)->toBeInstanceOf(SweepResult::class, "no result for route {$routeName}");
+
+    return $result;
 }
 
 it('fails a dashboard whose lazy widget throws', function () {
