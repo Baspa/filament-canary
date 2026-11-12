@@ -16,7 +16,24 @@ class TestCase extends Orchestra
         return [
             FilamentCanaryServiceProvider::class,
             AdminPanelProvider::class,
+            ...$this->fixturePanelProviders(),
         ];
+    }
+
+    /**
+     * Every *PanelProvider in Fixtures/Filament/Panels is registered, so a test can add
+     * a panel by adding a file instead of editing this class.
+     *
+     * @return list<class-string>
+     */
+    protected function fixturePanelProviders(): array
+    {
+        $files = glob(__DIR__.'/Fixtures/Filament/Panels/*PanelProvider.php') ?: [];
+
+        return array_map(
+            fn (string $file) => __NAMESPACE__.'\\Fixtures\\Filament\\Panels\\'.basename($file, '.php'),
+            $files,
+        );
     }
 
     public function getEnvironmentSetUp($app): void
@@ -30,6 +47,9 @@ class TestCase extends Orchestra
         ]);
 
         $app['config']->set('auth.providers.users.model', User::class);
+
+        // Fixture panels are opt-in: a test that sweeps one sets panels.only itself.
+        $app['config']->set('filament-canary.panels.only', ['admin']);
     }
 
     protected function defineDatabaseMigrations(): void
