@@ -4,6 +4,7 @@ namespace Baspa\FilamentCanary\Testing;
 
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
+use Baspa\FilamentCanary\Sweep\SweepVerdict;
 
 /**
  * Drop this into a Pest/PHPUnit test to enforce the whole sweep in one assertion:
@@ -14,7 +15,7 @@ use Baspa\FilamentCanary\Sweep\SweepResult;
 trait InteractsWithCanary
 {
     /**
-     * Run the sweep and assert no page failed. Returns every result for further assertions.
+     * Run the sweep and assert it passed. Returns every result for further assertions.
      *
      * @return list<SweepResult>
      */
@@ -22,26 +23,29 @@ trait InteractsWithCanary
     {
         $results = app(SmokeSweep::class)->run();
 
-        $strict = (bool) config('filament-canary.strict_authorization', false);
+        $verdict = SweepVerdict::judge($results);
 
-        $failures = array_values(array_filter(
-            $results,
-            fn (SweepResult $result) => $result->isFailure($strict),
-        ));
-
-        $this->assertSame([], $failures, $this->describeFailures($failures));
+        $this->assertTrue($verdict->passed(), $this->describeVerdict($verdict));
 
         return $results;
     }
 
-    /**
-     * @param  list<SweepResult>  $failures
-     */
-    protected function describeFailures(array $failures): string
+    protected function describeVerdict(SweepVerdict $verdict): string
     {
-        if ($failures === []) {
+        if ($verdict->passed()) {
             return '';
         }
+
+        $failed = count($verdict->failures).' Filament page(s) failed the canary sweep';
+
+        $headline = match (true) {
+            $verdict->problem() !== null => $verdict->problem(),
+            $verdict->anyPagePassed() => $failed.':',
+            default => $failed.' and none passed:',
+        };
+
+        // When nothing passed, the skip and needs-auth reasons explain why.
+        $listed = $verdict->anyPagePassed() ? $verdict->failures : $verdict->results;
 
         $lines = array_map(
             fn (SweepResult $result) => sprintf(
@@ -50,9 +54,9 @@ trait InteractsWithCanary
                 $result->target->label(),
                 $result->reason ?? 'unknown',
             ),
-            $failures,
+            $listed,
         );
 
-        return count($failures)." Filament page(s) failed the canary sweep:\n".implode("\n", $lines);
+        return implode("\n", [$headline, ...$lines]);
     }
 }

@@ -34,12 +34,13 @@ class SweepResult
         return new self($target, SweepStatus::Skipped, $reason);
     }
 
-    public function isFailure(bool $strictAuthorization = false): bool
+    public function isFailure(bool $strictAuthorization = false, bool $failOnSkipped = false): bool
     {
-        if ($this->status === SweepStatus::Failed) {
-            return true;
-        }
-
-        return $strictAuthorization && $this->status === SweepStatus::NeedsAuth;
+        return match ($this->status) {
+            SweepStatus::Passed => false,
+            SweepStatus::Failed => true,
+            SweepStatus::NeedsAuth => $strictAuthorization,
+            SweepStatus::Skipped => $failOnSkipped,
+        };
     }
 }

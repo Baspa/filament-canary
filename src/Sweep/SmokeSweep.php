@@ -6,8 +6,13 @@ use Baspa\FilamentCanary\Introspection\PageTarget;
 use Baspa\FilamentCanary\Introspection\PageTargetCollector;
 use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Filament\Panel;
+use Filament\Tables\Contracts\HasTable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\DB;
+use Livewire\Component;
+use Livewire\EventBus;
+use Livewire\Features\SupportLazyLoading\SupportLazyLoading;
+use Livewire\Livewire;
 use RuntimeException;
 
 /**
@@ -43,6 +48,33 @@ class SmokeSweep
             );
         }
 
+        // Lazy widgets, lazy relation managers and deferred tables render their content in a
+        // later Livewire request the sweep never makes, so their errors would pass unseen.
+        $lazyLoadingWasDisabled = SupportLazyLoading::$disableWhileTesting;
+        Livewire::withoutLazyLoading();
+        $stopLoadingDeferredTables = app(EventBus::class)->on('mount', $this->loadDeferredTable(...));
+
+        try {
+            return $this->sweepInTransaction();
+        } finally {
+            $stopLoadingDeferredTables();
+            // The flag is process-wide: leaving it on would change how the app's other tests render.
+            SupportLazyLoading::$disableWhileTesting = $lazyLoadingWasDisabled;
+        }
+    }
+
+    protected function loadDeferredTable(Component $component): void
+    {
+        if ($component instanceof HasTable && method_exists($component, 'loadTable')) {
+            $component->loadTable();
+        }
+    }
+
+    /**
+     * @return list<SweepResult>
+     */
+    protected function sweepInTransaction(): array
+    {
         if (! (bool) config('filament-canary.use_transaction', true)) {
             return $this->sweepAll();
         }
@@ -143,18 +175,16 @@ class SmokeSweep
 
         $authorized = $this->requester->get($url, $user, $target->guard);
 
-        if ($authorized >= 500) {
-            return SweepResult::failed($target, "authorized request returned {$authorized}", $authorized);
-        }
-
         if (in_array($authorized, [401, 403], true)) {
             return SweepResult::needsAuth($target, "authorized user was denied ({$authorized}); configure filament-canary.acting_as for panel [{$panel->getId()}]", $authorized);
         }
 
-        if ($authorized === 404) {
-            return ($target->requiresRecord || $target->tenantScoped)
-                ? SweepResult::skipped($target, 'got 404 — the generated record/tenant is likely not visible to this page; provide a resolver via config')
-                : SweepResult::failed($target, 'authorized request returned 404', $authorized);
+        if ($authorized === 404 && ($target->tenantScoped || $target->requiresRecord)) {
+            return SweepResult::skipped($target, $this->notFoundReason($target));
+        }
+
+        if ($authorized >= 400) {
+            return SweepResult::failed($target, "authorized request returned {$authorized}", $authorized);
         }
 
         if ($authorized >= 300) {
@@ -171,7 +201,26 @@ class SmokeSweep
             return SweepResult::failed($target, "guest access allowed ({$guest}) — authorization leak", $authorized, $guest);
         }
 
+        if ($guest >= 400 && ! in_array($guest, [401, 403], true)) {
+            return SweepResult::failed($target, "guest request returned {$guest}; can't confirm guests are denied", $authorized, $guest);
+        }
+
         return SweepResult::passed($target, $authorized, $guest);
+    }
+
+    protected function notFoundReason(PageTarget $target): string
+    {
+        $causes = [];
+
+        if ($target->tenantScoped) {
+            $causes[] = "the acting user can't access the generated tenant (return a tenant they belong to from the filament-canary.tenant resolver, which receives the panel and the acting user)";
+        }
+
+        if ($target->requiresRecord) {
+            $causes[] = "the generated [{$target->modelClass}] record isn't visible to the page's query (fix the model factory or query scopes, or exclude the page)";
+        }
+
+        return 'got 404: '.implode(', or ', $causes);
     }
 
     /**

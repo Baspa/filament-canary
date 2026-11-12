@@ -9,6 +9,8 @@ use Baspa\FilamentCanary\Sweep\Requester;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
 use Baspa\FilamentCanary\Sweep\TenantResolver;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\Post;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\Team;
 use Filament\Panel;
 use Illuminate\Auth\GenericUser;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -83,12 +85,76 @@ it('marks a 5xx authorized response as a failure', function () {
     expect($results[0]->status)->toBe(SweepStatus::Failed);
 });
 
+it('marks an authorized 4xx other than 401, 403 and 404 as a failure', function (int $status) {
+    $results = sweepWith([target()], new FakeRequester(authorized: $status));
+
+    expect($results[0]->status)->toBe(SweepStatus::Failed)
+        ->and($results[0]->reason)->toBe("authorized request returned {$status}")
+        ->and($results[0]->authorizedStatus)->toBe($status);
+})->with([400, 405, 410, 419, 429]);
+
+it('marks an authorized 404 on a page without a record or tenant as a failure', function () {
+    $results = sweepWith([target()], new FakeRequester(authorized: 404));
+
+    expect($results[0]->status)->toBe(SweepStatus::Failed)
+        ->and($results[0]->reason)->toBe('authorized request returned 404');
+});
+
+it('skips a record page that returns 404, pointing at the record', function () {
+    $t = target(['requiresRecord' => true, 'parameterNames' => ['record'], 'modelClass' => Post::class]);
+
+    $results = sweepWith([$t], new FakeRequester(authorized: 404));
+
+    expect($results[0]->status)->toBe(SweepStatus::Skipped)
+        ->and($results[0]->reason)->toContain('['.Post::class."] record isn't visible to the page's query")
+        ->and($results[0]->reason)->toContain('exclude the page')
+        ->and($results[0]->reason)->not->toContain('tenant');
+});
+
+it('skips a tenant page that returns 404, pointing at the tenant resolver', function () {
+    config()->set('filament-canary.tenant', fn () => new Team(['id' => 1]));
+    $t = target(['tenantScoped' => true, 'parameterNames' => ['tenant']]);
+
+    $results = sweepWith([$t], new FakeRequester(authorized: 404));
+
+    expect($results[0]->status)->toBe(SweepStatus::Skipped)
+        ->and($results[0]->reason)->toContain("the acting user can't access the generated tenant")
+        ->and($results[0]->reason)->toContain('filament-canary.tenant resolver')
+        ->and($results[0]->reason)->not->toContain('record');
+});
+
+it('names both causes when a tenant-scoped record page returns 404', function () {
+    config()->set('filament-canary.tenant', fn () => new Team(['id' => 1]));
+    $t = target(['tenantScoped' => true, 'requiresRecord' => true, 'parameterNames' => ['tenant', 'record'], 'modelClass' => Post::class]);
+
+    $results = sweepWith([$t], new FakeRequester(authorized: 404));
+
+    expect($results[0]->status)->toBe(SweepStatus::Skipped)
+        ->and($results[0]->reason)->toContain("can't access the generated tenant")
+        ->and($results[0]->reason)->toContain("record isn't visible");
+});
+
 it('marks a guest 2xx on a protected page as an authorization leak', function () {
     $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: 200));
 
     expect($results[0]->status)->toBe(SweepStatus::Failed)
         ->and($results[0]->reason)->toContain('leak');
 });
+
+it('fails a guest response that does not show a denial', function (int $guest) {
+    $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: $guest));
+
+    expect($results[0]->status)->toBe(SweepStatus::Failed)
+        ->and($results[0]->reason)->toBe("guest request returned {$guest}; can't confirm guests are denied")
+        ->and($results[0]->guestStatus)->toBe($guest);
+})->with([400, 404, 405, 419, 429, 500, 503]);
+
+it('counts a guest redirect, 401 or 403 as denied', function (int $guest) {
+    $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: $guest));
+
+    expect($results[0]->status)->toBe(SweepStatus::Passed)
+        ->and($results[0]->guestStatus)->toBe($guest);
+})->with([301, 302, 303, 307, 401, 403]);
 
 it('passes when authorized succeeds and guest is denied', function () {
     $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: 302));
