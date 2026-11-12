@@ -2,6 +2,55 @@
 
 All notable changes to `baspa/filament-canary` will be documented in this file.
 
+## v1.4.0 - 2026-11-12
+
+### Upgrading
+
+- **The sweep only runs in allowed environments.** The new `allowed_environments` option defaults to `['local', 'testing']`. `production`, `prod`, `prd` and `live` are always refused.
+  
+  - If you run `canary:check` with another `APP_ENV` (for example `ci` or `staging`), add it: `'allowed_environments' => ['local', 'testing', 'ci']`. Wildcards such as `ci-*` work.
+  - When the environment is refused, `canary:check` prints why and exits 1.
+  
+  (#20, #36)
+  
+
+### Fixed
+
+- **Every swept request starts with a clean state, and your test gets its own state back afterwards.**
+  
+  - The session, the default guard and its user resolver, Laravel's redirector, and Filament's current panel and tenant are restored after each request.
+  - Running the sweep twice, or `canarySweep()` and then `canary:check` in one test, now gives the same results.
+  - On Filament 4 / Livewire 3, a page that aborted in `mount()` no longer made every later guest check return 500.
+  - Swept requests no longer see session data your test set up. For panels whose access depends on session data, bind your own `Requester` (see the README).
+  
+  (#33, #36)
+  
+- **Invalid config lists fail loudly.** `panels.only`, `panels.except` and `exclude` convert numbers and stringable values to strings. Anything else is rejected with an error that names the key, so a malformed `panels.only` can no longer silently widen the sweep to every panel. (#22, #35)
+  
+- **`canary:install` no longer crashes** when a guard's provider or a provider's model isn't a string. (#22, #35)
+  
+
+### Changed
+
+- **PHPStan level:** PHPStan now runs at level max. (#22, #35)
+  
+- **Skeleton leftovers removed:**
+  
+  - the unused Dependabot auto-merge workflow and FUNDING file;
+  - placeholder text in the changelog and issue templates;
+  - three unused dev dependencies.
+  
+  Blank issues are now allowed. (#23, #34)
+  
+- **Internal API:**
+  
+  - `KernelRequester`'s constructor now takes the auth manager, the session and the container.
+  - `AccessProposal` no longer has `guard` and `userModel` fields.
+  - Code that only implements the `Requester` interface is not affected.
+  
+
+**Full changelog:** https://github.com/Baspa/filament-canary/compare/v1.3.0...v1.4.0
+
 ## v1.3.0 - 2026-11-12
 
 ### Requirements
