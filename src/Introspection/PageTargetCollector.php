@@ -2,9 +2,12 @@
 
 namespace Baspa\FilamentCanary\Introspection;
 
+use Filament\Http\Controllers\RedirectToHomeController;
+use Filament\Http\Controllers\RedirectToTenantController;
 use Filament\Panel;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
+use Illuminate\Support\Str;
 
 /**
  * Turns a Filament panel into the list of GET pages worth smoke-testing, by reading
@@ -12,21 +15,43 @@ use Illuminate\Routing\Router;
  */
 class PageTargetCollector
 {
+    /**
+     * Guest-facing and signed-link flows, where "authorized user gets 2xx, guest is denied" does not apply.
+     */
+    protected const AUTH_FLOW_ROUTES = [
+        'auth.login',
+        'auth.logout',
+        'auth.register',
+        'auth.password-reset.*',
+        'auth.email-verification.*',
+        'auth.email-change-verification.*',
+        'auth.multi-factor-authentication.*',
+    ];
+
+    /**
+     * These only redirect to a panel page, which is swept on its own.
+     */
+    protected const REDIRECT_CONTROLLERS = [
+        RedirectToHomeController::class,
+        RedirectToTenantController::class,
+    ];
+
     public function __construct(
         protected Router $router,
     ) {}
 
     /**
-     * @param  list<string>  $excludeResources  Resource/page class names to skip
+     * @param  list<string>  $exclude  Resource or page class names to skip
      * @return list<PageTarget>
      */
-    public function forPanel(Panel $panel, array $excludeResources = []): array
+    public function forPanel(Panel $panel, array $exclude = []): array
     {
         $panelId = $panel->getId();
         $guard = $panel->getAuthGuard();
         $prefix = "filament.{$panelId}.";
 
-        $resourceByBase = $this->resourceRouteBaseMap($panel, $excludeResources);
+        $authFlowPatterns = $this->authFlowRouteNamePatterns($panel);
+        $resourceByBase = $this->resourceRouteBaseMap($panel);
 
         $targets = [];
 
@@ -42,14 +67,19 @@ class PageTargetCollector
                 continue;
             }
 
-            // Authentication flows are not pages to smoke-test.
-            if (str_contains($name, '.auth.')) {
+            if (Str::is($authFlowPatterns, $name)) {
+                continue;
+            }
+
+            $pageClass = $route->getControllerClass();
+
+            if (in_array($pageClass, self::REDIRECT_CONTROLLERS, true)) {
                 continue;
             }
 
             [$resourceClass, $modelClass] = $this->matchResource($name, $resourceByBase);
 
-            if ($resourceClass !== null && in_array($resourceClass, $excludeResources, true)) {
+            if (in_array($resourceClass, $exclude, true) || in_array($pageClass, $exclude, true)) {
                 continue;
             }
 
@@ -65,6 +95,7 @@ class PageTargetCollector
                 tenantScoped: in_array('tenant', $params, true),
                 modelClass: $modelClass,
                 resourceClass: $resourceClass,
+                pageClass: $pageClass,
             );
         }
 
@@ -72,18 +103,37 @@ class PageTargetCollector
     }
 
     /**
-     * @param  list<string>  $excludeResources
+     * @return list<string>
+     */
+    protected function authFlowRouteNamePatterns(Panel $panel): array
+    {
+        $panelPrefix = "filament.{$panel->getId()}.";
+        $domains = $panel->getDomains();
+
+        // Filament only puts the domain in route names when a panel has more than one.
+        $prefixes = count($domains) > 1
+            ? array_map(fn (string $domain) => "{$panelPrefix}{$domain}.", $domains)
+            : [$panelPrefix];
+
+        $patterns = [];
+
+        foreach ($prefixes as $prefix) {
+            foreach (self::AUTH_FLOW_ROUTES as $authFlowRoute) {
+                $patterns[] = $prefix.$authFlowRoute;
+            }
+        }
+
+        return $patterns;
+    }
+
+    /**
      * @return array<string, class-string> routeBaseName => resourceClass
      */
-    protected function resourceRouteBaseMap(Panel $panel, array $excludeResources): array
+    protected function resourceRouteBaseMap(Panel $panel): array
     {
         $map = [];
 
         foreach ($panel->getResources() as $resourceClass) {
-            if (in_array($resourceClass, $excludeResources, true)) {
-                continue;
-            }
-
             $map[$resourceClass::getRouteBaseName($panel)] = $resourceClass;
         }
 

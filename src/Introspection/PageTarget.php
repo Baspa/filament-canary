@@ -4,7 +4,7 @@ namespace Baspa\FilamentCanary\Introspection;
 
 /**
  * A single Filament page that the sweep will try to reach: a resource page
- * (List/Create/Edit/View), a custom panel page, or the panel dashboard.
+ * (List/Create/Edit/View), a custom panel page, the panel dashboard or the profile page.
  *
  * Built from the router's registered routes so it always reflects what Filament
  * actually exposes, independent of Filament internals or version.
@@ -24,6 +24,7 @@ class PageTarget
         public readonly bool $tenantScoped,
         public readonly ?string $modelClass = null,
         public readonly ?string $resourceClass = null,
+        public readonly ?string $pageClass = null,
     ) {}
 
     /**
