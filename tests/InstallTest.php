@@ -6,6 +6,7 @@ use Baspa\FilamentCanary\Install\ConfigWriter;
 use Baspa\FilamentCanary\Install\ResolverClass;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\EmailUser;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\FlagUser;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\HasManyUsersTeam;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\PermissionRoleUser;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\PermissionTenantUser;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\RoleUser;
@@ -110,7 +111,7 @@ it('writes config entries that point at the generated resolver classes', functio
 
     $class = ResolverClass::actingAs(new AccessProposal('admin', 'web', RoleUser::class, true,
         "\\App\\Models\\User::factory()->create()->assignRole('admin')",
-        null, 'high', 'Role-based access detected.'), 'Tests\\Canary');
+        null, 'high', 'Role-based access detected.'), 'Tests\\Canary', 'Admin');
 
     $block = $writer->block([$class]);
 
@@ -122,8 +123,7 @@ it('writes config entries that point at the generated resolver classes', functio
 it('writes no resolver class and a null block when no panel needs one', function () {
     $proposal = new AccessProposal('admin', 'web', User::class, false, null, null, 'high', 'open');
 
-    expect(ResolverClass::actingAs($proposal, 'Tests\\Canary'))->toBeNull()
-        ->and(ResolverClass::tenant($proposal, 'Tests\\Canary'))->toBeNull()
+    expect(ResolverClass::forProposals([$proposal], 'Tests\\Canary'))->toBe([[], []])
         ->and((new ConfigWriter)->block([]))->toBe('null');
 });
 
@@ -135,12 +135,11 @@ it('keeps every option and its docs from the published config', function () {
 });
 
 it('generates invokable resolver classes that return the proposed expressions', function () {
-    $proposal = new AccessProposal('shop-admin', 'web', RoleUser::class, true,
+    $proposal = new AccessProposal('shop.admin', 'web', RoleUser::class, true,
         '\\App\\Models\\User::factory()->create()', '\\App\\Models\\Team::factory()->hasAttached($user)->create()',
         'low', 'Plain factory user.', 'Attaches the user.');
 
-    $actingAs = ResolverClass::actingAs($proposal, 'Tests\\Canary');
-    $tenant = ResolverClass::tenant($proposal, 'Tests\\Canary');
+    [[$actingAs], [$tenant]] = ResolverClass::forProposals([$proposal], 'Tests\\Canary');
 
     expect($actingAs->className())->toBe('Tests\\Canary\\ShopAdminActingAs')
         ->and($actingAs->path())->toBe('tests/Canary/ShopAdminActingAs.php')
@@ -170,4 +169,91 @@ it('puts generated classes in the namespace composer.json maps to tests/', funct
     }
 
     expect(ResolverClass::namespaceFor('/does/not/exist/composer.json'))->toBe('Tests\\Canary');
+});
+
+it('uses Canary as the namespace when tests/ is mapped to the root namespace', function () {
+    $composer = tempnam(sys_get_temp_dir(), 'canary-composer');
+
+    try {
+        file_put_contents($composer, json_encode(['autoload-dev' => ['psr-4' => ['' => 'tests/']]]));
+
+        $namespace = ResolverClass::namespaceFor($composer);
+    } finally {
+        unlink($composer);
+    }
+
+    $proposal = new AccessProposal('admin', 'web', RoleUser::class, true, '\\App\\Models\\User::factory()->create()', null, 'low', 'Plain factory user.');
+    [[$class]] = ResolverClass::forProposals([$proposal], $namespace);
+
+    expect($namespace)->toBe('Canary')
+        ->and($class->className())->toBe('Canary\\AdminActingAs')
+        ->and($class->source)->toContain('namespace Canary;');
+
+    token_get_all($class->source, TOKEN_PARSE);
+});
+
+it('turns panel ids into valid class name prefixes that are unique within a run', function () {
+    expect(ResolverClass::prefixes(['app-admin', 'app_admin', 'app.admin', 'ADMIN', 'admin', '2fa', '...']))->toBe([
+        'app-admin' => 'AppAdmin',
+        'app_admin' => 'AppAdmin2',
+        'app.admin' => 'AppAdmin3',
+        'ADMIN' => 'ADMIN',
+        'admin' => 'Admin2',
+        '2fa' => 'Panel2fa',
+        '...' => 'Panel',
+    ]);
+});
+
+it('does not propose hasAttached() when the tenant relation is not many-to-many', function () {
+    config()->set('auth.guards.web.provider', 'users');
+    config()->set('auth.providers.users.model', TeamMember::class);
+
+    $p = (new AccessAnalyzer)->analyze(Panel::make()->id('shop')->tenant(HasManyUsersTeam::class));
+
+    expect($p->tenantExpression)->toBe('\\'.HasManyUsersTeam::class.'::factory()->create()');
+});
+
+it('carries over changed settings and leaves the rest of the published config as it is', function () {
+    $writer = new ConfigWriter;
+    $published = file_get_contents(__DIR__.'/../config/filament-canary.php');
+
+    $config = $writer->generate([], [], [
+        ...$writer->defaults(),
+        'panels' => ['only' => ['admin'], 'except' => []],
+        'test_guests' => false,
+        'exclude' => ['App\\Filament\\Resources\\PostResource'],
+    ]);
+
+    $written = eval('?>'.$config);
+
+    expect($written)->toBe([...$writer->defaults(), ...[
+        'panels' => ['only' => ['admin'], 'except' => []],
+        'exclude' => ['App\\Filament\\Resources\\PostResource'],
+        'test_guests' => false,
+    ]])
+        ->and($config)->toContain("    'use_transaction' => true,\n")
+        ->and(substr_count($config, '|---'))->toBe(substr_count($published, '|---'));
+});
+
+it('only accepts plain values as settings to carry over', function (mixed $value, bool $exportable) {
+    expect(ConfigWriter::exportable($value))->toBe($exportable);
+})->with([
+    'scalar' => ['admin', true],
+    'null' => [null, true],
+    'nested array of scalars' => [['only' => ['admin'], 'except' => []], true],
+    'closure' => [fn () => true, false],
+    'object in an array' => [[new stdClass], false],
+]);
+
+it('fails loudly when the published config has no slot for a resolver', function () {
+    $template = tempnam(sys_get_temp_dir(), 'canary-config');
+
+    try {
+        file_put_contents($template, "<?php\n\nreturn [\n\n    'acting_as' => null,\n\n];\n");
+
+        expect(fn () => (new ConfigWriter($template))->generate([], []))
+            ->toThrow(LogicException::class, 'Could not find the [tenant] option');
+    } finally {
+        unlink($template);
+    }
 });

@@ -35,13 +35,13 @@ class InstallCommand extends Command
         $this->render($proposals);
 
         $namespace = ResolverClass::namespaceFor(base_path('composer.json'));
-        $actingAs = array_values(array_filter(array_map(fn (AccessProposal $p) => ResolverClass::actingAs($p, $namespace), $proposals)));
-        $tenants = array_values(array_filter(array_map(fn (AccessProposal $p) => ResolverClass::tenant($p, $namespace), $proposals)));
+        [$actingAs, $tenants] = ResolverClass::forProposals($proposals, $namespace);
         $classes = [...$actingAs, ...$tenants];
 
         $path = config_path('filament-canary.php');
+        $overwriting = File::exists($path);
 
-        if (File::exists($path) && ! $this->confirm('config/filament-canary.php already exists. Overwrite it?', false)) {
+        if ($overwriting && ! $this->confirm('config/filament-canary.php already exists. Overwrite it?', false)) {
             return $this->printPreview($writer, $actingAs, $tenants);
         }
 
@@ -58,7 +58,7 @@ class InstallCommand extends Command
             $this->writeClass($class);
         }
 
-        File::put($path, $writer->generate($actingAs, $tenants));
+        File::put($path, $writer->generate($actingAs, $tenants, $overwriting ? $this->currentSettings($writer) : []));
 
         $this->components->info('Wrote config/filament-canary.php — review the proposed resolvers.');
         $this->line('Then add a test: <comment>$this->canarySweep();</comment> (via Baspa\\FilamentCanary\\Testing\\InteractsWithCanary)');
@@ -74,6 +74,32 @@ class InstallCommand extends Command
         $ids = config($configKey, []);
 
         return is_array($ids) ? array_values(array_filter($ids, is_string(...))) : [];
+    }
+
+    /**
+     * The current values of the non-resolver options, so overwriting the config keeps them.
+     *
+     * @return array<string, mixed>
+     */
+    protected function currentSettings(ConfigWriter $writer): array
+    {
+        $settings = [];
+
+        foreach (array_keys($writer->defaults()) as $key) {
+            if (in_array($key, ['acting_as', 'tenant'], true)) {
+                continue;
+            }
+
+            $value = config("filament-canary.{$key}");
+
+            if (ConfigWriter::exportable($value)) {
+                $settings[$key] = $value;
+            } else {
+                $this->components->warn("Could not carry over [filament-canary.{$key}] because it holds a closure or object; wrote the default instead.");
+            }
+        }
+
+        return $settings;
     }
 
     protected function writeClass(ResolverClass $class): void

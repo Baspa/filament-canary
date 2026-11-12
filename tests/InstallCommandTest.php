@@ -110,3 +110,51 @@ it('only analyzes the panels selected by panels.only and panels.except', functio
         ->doesntExpectOutputToContain('class AdminActingAs')
         ->assertExitCode(0);
 });
+
+it('keeps the current settings when it overwrites an existing config', function () {
+    config()->set('auth.providers.users.model', RoleUser::class);
+    config()->set('filament-canary.panels', ['only' => ['admin'], 'except' => ['team']]);
+    config()->set('filament-canary.exclude', ['App\\Filament\\Resources\\PostResource']);
+    config()->set('filament-canary.test_guests', false);
+    config()->set('filament-canary.use_transaction', false);
+    config()->set('filament-canary.strict_authorization', true);
+    File::put(config_path('filament-canary.php'), "<?php\n\nreturn [];\n");
+
+    $this->artisan('canary:install')
+        ->expectsConfirmation('config/filament-canary.php already exists. Overwrite it?', 'yes')
+        ->expectsConfirmation('Write these proposals to config/filament-canary.php?', 'yes')
+        ->assertExitCode(0);
+
+    $written = require config_path('filament-canary.php');
+
+    expect($written['panels'])->toBe(['only' => ['admin'], 'except' => ['team']])
+        ->and($written['exclude'])->toBe(['App\\Filament\\Resources\\PostResource'])
+        ->and($written['test_guests'])->toBeFalse()
+        ->and($written['use_transaction'])->toBeFalse()
+        ->and($written['strict_authorization'])->toBeTrue()
+        ->and($written['acting_as'])->toBe(['admin' => 'Tests\\Canary\\AdminActingAs']);
+});
+
+it('writes the default and warns for a setting it cannot write back', function () {
+    config()->set('filament-canary.exclude', [fn () => 'App\\Filament\\Resources\\PostResource']);
+    File::put(config_path('filament-canary.php'), "<?php\n\nreturn [];\n");
+
+    $this->artisan('canary:install')
+        ->expectsConfirmation('config/filament-canary.php already exists. Overwrite it?', 'yes')
+        ->expectsConfirmation('Write these proposals to config/filament-canary.php?', 'yes')
+        ->expectsOutputToContain('Could not carry over [filament-canary.exclude]')
+        ->assertExitCode(0);
+
+    expect((require config_path('filament-canary.php'))['exclude'])->toBe([]);
+});
+
+it('writes the package defaults for a new config', function () {
+    config()->set('filament-canary.test_guests', false);
+
+    $this->artisan('canary:install')
+        ->expectsConfirmation('Write these proposals to config/filament-canary.php?', 'yes')
+        ->assertExitCode(0);
+
+    expect(file_get_contents(config_path('filament-canary.php')))
+        ->toBe(file_get_contents(__DIR__.'/../config/filament-canary.php'));
+});
