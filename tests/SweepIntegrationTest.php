@@ -1,5 +1,6 @@
 <?php
 
+use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
@@ -75,3 +76,41 @@ it('rolls back every user and record it creates', function () {
     expect(User::count())->toBe(0)
         ->and(Post::count())->toBe(0);
 });
+
+it('reads numbers and Stringable objects in panels.only as panel ids', function () {
+    $panels = new class extends PanelCollector
+    {
+        /** @var list<string> */
+        public array $only = [];
+
+        public function collect(array $only = [], array $except = []): array
+        {
+            $this->only = $only;
+
+            return [];
+        }
+    };
+    app()->instance(PanelCollector::class, $panels);
+    config()->set('filament-canary.panels.only', ['admin', 1, 2.5, str('team')]);
+
+    app(SmokeSweep::class)->run();
+
+    expect($panels->only)->toBe(['admin', '1', '2.5', 'team']);
+});
+
+it('sweeps nothing, not every panel, when panels.only only holds ids of panels that do not exist', function () {
+    config()->set('filament-canary.panels.only', [404]);
+
+    expect(app(SmokeSweep::class)->run())->toBe([]);
+});
+
+it('refuses a panel or page list it cannot read as strings, naming the config key', function (string $key, mixed $value, string $message) {
+    config()->set($key, $value);
+
+    expect(fn () => app(SmokeSweep::class)->run())->toThrow(InvalidArgumentException::class, $message);
+})->with([
+    'nested array' => ['filament-canary.panels.only', [['admin']], '[filament-canary.panels.only] must contain strings, got [array].'],
+    'boolean' => ['filament-canary.panels.except', [true], '[filament-canary.panels.except] must contain strings, got [bool].'],
+    'plain object' => ['filament-canary.exclude', [new stdClass], '[filament-canary.exclude] must contain strings, got [stdClass].'],
+    'not a list' => ['filament-canary.panels.only', 'admin', '[filament-canary.panels.only] must be a list of strings, got [string].'],
+]);

@@ -6,6 +6,7 @@ use Filament\Http\Controllers\RedirectToHomeController;
 use Filament\Http\Controllers\RedirectToTenantController;
 use Filament\Panel;
 use Filament\Resources\Pages\Page as ResourcePage;
+use Filament\Resources\Resource as FilamentResource;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
 
@@ -71,7 +72,7 @@ class PageTargetCollector
                 continue;
             }
 
-            $params = array_values($route->parameterNames());
+            $params = array_values(array_filter($route->parameterNames(), is_string(...)));
 
             $targets[] = new PageTarget(
                 panelId: $panelId,
@@ -91,7 +92,7 @@ class PageTargetCollector
     }
 
     /**
-     * @return class-string|null
+     * @return class-string<FilamentResource>|null
      */
     protected function resourceOf(?string $pageClass): ?string
     {
@@ -99,6 +100,8 @@ class PageTargetCollector
             return null;
         }
 
-        return $pageClass::getResource();
+        $resource = $pageClass::getResource();
+
+        return is_subclass_of($resource, FilamentResource::class) ? $resource : null;
     }
 }
