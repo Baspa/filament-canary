@@ -49,12 +49,14 @@ class SmokeSweep
         // later Livewire request the sweep never makes, so their errors would pass unseen.
         $lazyLoadingWasDisabled = SupportLazyLoading::$disableWhileTesting;
         Livewire::withoutLazyLoading();
-        $stopLoadingDeferredTables = app(EventBus::class)->on('mount', $this->loadDeferredTable(...));
+        $events = app(EventBus::class);
+        $loadDeferredTable = $this->loadDeferredTable(...);
+        $events->on('mount', $loadDeferredTable);
 
         try {
             return $this->sweepInTransaction();
         } finally {
-            $stopLoadingDeferredTables();
+            $events->off('mount', $loadDeferredTable);
             // The flag is process-wide: leaving it on would change how the app's other tests render.
             SupportLazyLoading::$disableWhileTesting = $lazyLoadingWasDisabled;
         }
