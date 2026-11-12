@@ -57,13 +57,13 @@ class ConfigWriter
     /**
      * The options in the published config with their default values.
      *
-     * @return array<mixed>
+     * @return array<string, mixed>
      */
     public function defaults(): array
     {
         $defaults = require $this->publishedConfig;
 
-        return is_array($defaults) ? $defaults : [];
+        return is_array($defaults) ? array_filter($defaults, is_string(...), ARRAY_FILTER_USE_KEY) : [];
     }
 
     /**

@@ -228,7 +228,7 @@ class SmokeSweep
             return [];
         }
 
-        return array_values(array_map(strval(...), $value));
+        return array_values(array_filter($value, is_string(...)));
     }
 
     /**
