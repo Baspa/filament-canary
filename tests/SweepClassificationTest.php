@@ -4,6 +4,7 @@ use Baspa\FilamentCanary\Introspection\PageTarget;
 use Baspa\FilamentCanary\Introspection\PageTargetCollector;
 use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Baspa\FilamentCanary\Sweep\ActingUserResolver;
+use Baspa\FilamentCanary\Sweep\EnvironmentNotAllowedException;
 use Baspa\FilamentCanary\Sweep\RecordResolver;
 use Baspa\FilamentCanary\Sweep\Requester;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
@@ -200,17 +201,69 @@ it('runs without a transaction when use_transaction is disabled', function () {
     expect($results[0]->status)->toBe(SweepStatus::Passed);
 });
 
-it('refuses to run in the production environment', function () {
+it('refuses to run in the production environment, even when allowed_environments lists it', function () {
+    config()->set('filament-canary.allowed_environments', ['production']);
+
     $sweep = new class(new PanelCollector, new PageTargetCollector(app('router')), new ActingUserResolver, new RecordResolver, new TenantResolver, new FakeRequester) extends SmokeSweep
     {
-        protected function isProduction(): bool
+        protected function currentEnvironment(): string
         {
-            return true;
+            return 'production';
         }
     };
 
-    expect(fn () => $sweep->run())->toThrow(RuntimeException::class, 'production');
+    expect(fn () => $sweep->run())->toThrow(EnvironmentNotAllowedException::class, 'production');
 });
+
+it('refuses to run in an environment that allowed_environments does not list', function () {
+    app()->detectEnvironment(fn () => 'staging');
+
+    expect(fn () => sweepWith([target()], new FakeRequester))->toThrow(
+        EnvironmentNotAllowedException::class,
+        "APP_ENV [staging], because filament-canary.allowed_environments doesn't list it. To run the sweep here, set 'allowed_environments' => ['local', 'testing', 'staging'] in config/filament-canary.php",
+    );
+});
+
+it('runs in an environment that allowed_environments lists', function () {
+    app()->detectEnvironment(fn () => 'ci');
+    config()->set('filament-canary.allowed_environments', ['ci']);
+
+    expect(sweepWith([target()], new FakeRequester)[0]->status)->toBe(SweepStatus::Passed);
+});
+
+it('refuses production names in any letter case without suggesting a config line', function (string $environment) {
+    app()->detectEnvironment(fn () => $environment);
+    config()->set('filament-canary.allowed_environments', [$environment, '*']);
+
+    expect(fn () => sweepWith([target()], new FakeRequester))->toThrow(
+        function (EnvironmentNotAllowedException $e) use ($environment) {
+            expect($e->getMessage())
+                ->toContain("never runs in production, and APP_ENV [{$environment}] is a production name")
+                ->not->toContain("'allowed_environments' =>");
+        },
+    );
+})->with(['prod', 'prd', 'live', 'Production', 'PROD', 'Live']);
+
+it('runs in an environment that matches an allowed_environments pattern', function () {
+    app()->detectEnvironment(fn () => 'ci-github');
+    config()->set('filament-canary.allowed_environments', ['ci-*']);
+
+    expect(sweepWith([target()], new FakeRequester)[0]->status)->toBe(SweepStatus::Passed);
+});
+
+it('names allowed_environments when it is not a list of strings', function (mixed $value, string $given) {
+    config()->set('filament-canary.allowed_environments', $value);
+
+    expect(fn () => sweepWith([target()], new FakeRequester))->toThrow(
+        EnvironmentNotAllowedException::class,
+        "filament-canary.allowed_environments must be a list of APP_ENV names or patterns, such as ['local', 'testing', 'ci-*'], got {$given}.",
+    );
+})->with([
+    'null' => [null, 'null'],
+    'a string' => ['testing', 'string'],
+    'a non-string entry' => [['testing', 1], 'an array that is not a list of strings'],
+    'string keys' => [['env' => 'testing'], 'an array that is not a list of strings'],
+]);
 
 it('surfaces the real error when the acting user cannot be created', function () {
     $results = sweepWith([target()], new FakeRequester, function () {

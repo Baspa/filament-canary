@@ -14,6 +14,7 @@ use Baspa\FilamentCanary\Tests\Fixtures\Models\User;
 use Baspa\FilamentCanary\Tests\Fixtures\Resolvers\AttachingTeamTenant;
 use Baspa\FilamentCanary\Tests\Fixtures\Resolvers\OneArgumentTeamTenant;
 use Baspa\FilamentCanary\Tests\Fixtures\Resolvers\TeamMemberActingAs;
+use Filament\Facades\Filament;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\Authenticatable;
 
@@ -163,3 +164,13 @@ it('finds the tenant relation to the user model only when it is many-to-many', f
     'users() as has-many' => [HasManyUsersTeam::class, TeamMember::class, null],
     'no relation at all' => [Team::class, TeamMember::class, null],
 ]);
+
+it('puts back the current Filament panel and tenant after the sweep', function () {
+    config()->set('filament-canary.tenant', fn (Panel $panel, Authenticatable $user) => TenantTeam::factory()->hasAttached($user, [], 'members')->create());
+    Filament::setCurrentPanel('admin');
+
+    expectEveryResultPassed(sweepTeamTenantPages());
+
+    expect(Filament::getCurrentPanel()?->getId())->toBe('admin')
+        ->and(Filament::getTenant())->toBeNull();
+});

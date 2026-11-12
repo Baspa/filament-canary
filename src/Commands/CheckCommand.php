@@ -2,6 +2,7 @@
 
 namespace Baspa\FilamentCanary\Commands;
 
+use Baspa\FilamentCanary\Sweep\EnvironmentNotAllowedException;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
@@ -18,7 +19,13 @@ class CheckCommand extends Command
 
     public function handle(SmokeSweep $sweep): int
     {
-        $results = $sweep->run();
+        try {
+            $results = $sweep->run();
+        } catch (EnvironmentNotAllowedException $e) {
+            $this->components->error($e->getMessage());
+
+            return self::FAILURE;
+        }
 
         if ($results !== []) {
             $this->render($results);

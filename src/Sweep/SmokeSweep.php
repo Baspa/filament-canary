@@ -10,11 +10,11 @@ use Filament\Tables\Contracts\HasTable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Component;
 use Livewire\EventBus;
 use Livewire\Features\SupportLazyLoading\SupportLazyLoading;
 use Livewire\Livewire;
-use RuntimeException;
 
 /**
  * The engine. Walks every Filament panel's pages and, for each, asserts that an
@@ -44,24 +44,20 @@ class SmokeSweep
      */
     public function run(): array
     {
-        if ($this->isProduction()) {
-            throw new RuntimeException(
-                'filament-canary refuses to run in the [production] environment. The sweep requests '.
-                'every page as an authenticated user, which can trigger real side effects (queued jobs, '.
-                "mail, audit logs, writes on other connections) that a database rollback won't undo."
-            );
-        }
+        $this->ensureEnvironmentIsAllowed();
 
         // Lazy widgets, lazy relation managers and deferred tables render their content in a
         // later Livewire request the sweep never makes, so their errors would pass unseen.
         $lazyLoadingWasDisabled = SupportLazyLoading::$disableWhileTesting;
         Livewire::withoutLazyLoading();
-        $stopLoadingDeferredTables = app(EventBus::class)->on('mount', $this->loadDeferredTable(...));
+        $events = app(EventBus::class);
+        $loadDeferredTable = $this->loadDeferredTable(...);
+        $events->on('mount', $loadDeferredTable);
 
         try {
             return $this->sweepInTransaction();
         } finally {
-            $stopLoadingDeferredTables();
+            $events->off('mount', $loadDeferredTable);
             // The flag is process-wide: leaving it on would change how the app's other tests render.
             SupportLazyLoading::$disableWhileTesting = $lazyLoadingWasDisabled;
         }
@@ -84,8 +80,8 @@ class SmokeSweep
         }
 
         // Wrap the whole sweep in a transaction so the users/records it creates never
-        // persist. Covers the default connection only — see the production guard above
-        // for everything a rollback can't reach.
+        // persist. Covers the default connection only, which is why run() refuses
+        // environments that allowed_environments doesn't list.
         DB::beginTransaction();
 
         try {
@@ -99,9 +95,40 @@ class SmokeSweep
         }
     }
 
-    protected function isProduction(): bool
+    protected function ensureEnvironmentIsAllowed(): void
     {
-        return app()->environment('production');
+        $environment = $this->currentEnvironment();
+
+        if (in_array(strtolower($environment), ['production', 'prod', 'prd', 'live'], true)) {
+            throw EnvironmentNotAllowedException::production($environment);
+        }
+
+        $allowed = $this->allowedEnvironments();
+
+        // The matcher app()->environment(...$patterns) uses, applied to currentEnvironment().
+        if (! Str::is($allowed, $environment)) {
+            throw EnvironmentNotAllowedException::notListed($environment, $allowed);
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function allowedEnvironments(): array
+    {
+        $configured = config('filament-canary.allowed_environments', ['local', 'testing']);
+        $allowed = is_array($configured) ? array_values(array_filter($configured, is_string(...))) : [];
+
+        if ($allowed !== $configured) {
+            throw EnvironmentNotAllowedException::invalidConfig($configured);
+        }
+
+        return $allowed;
+    }
+
+    protected function currentEnvironment(): string
+    {
+        return app()->environment();
     }
 
     /**

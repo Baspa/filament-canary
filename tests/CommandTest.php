@@ -15,3 +15,17 @@ it('runs canary:install and prints a snippet when declined', function () {
         ->expectsConfirmation('Write these proposals to config/filament-canary.php?', 'no')
         ->assertExitCode(0);
 });
+
+it('runs canary:check after canarySweep() in the same test', function () {
+    $this->canarySweep();
+
+    $this->artisan('canary:check')->assertExitCode(0);
+});
+
+it('prints the environment refusal and fails canary:check', function () {
+    app()->detectEnvironment(fn () => 'staging');
+
+    $this->artisan('canary:check')
+        ->expectsOutputToContain('[staging]')
+        ->assertExitCode(1);
+});
