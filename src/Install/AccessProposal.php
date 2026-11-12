@@ -10,8 +10,6 @@ class AccessProposal
 {
     public function __construct(
         public readonly string $panelId,
-        public readonly string $guard,
-        public readonly ?string $userModel,
         /** Whether an acting_as resolver is needed at all (false when the panel is open). */
         public readonly bool $needsActingAs,
         /** PHP expression the acting_as resolver returns ($panel in scope), or null when none is needed. */

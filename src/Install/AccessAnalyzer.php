@@ -2,6 +2,7 @@
 
 namespace Baspa\FilamentCanary\Install;
 
+use Baspa\FilamentCanary\Support\GuardModel;
 use Baspa\FilamentCanary\Support\TenantMembership;
 use Closure;
 use Filament\Panel;
@@ -16,11 +17,11 @@ class AccessAnalyzer
 {
     public function analyze(Panel $panel): AccessProposal
     {
-        $userModel = $this->guardModel($panel->getAuthGuard());
+        $userModel = GuardModel::for($panel->getAuthGuard());
         [$tenantExpression, $tenantExplanation] = $this->proposeTenant($panel, $userModel);
 
         $propose = fn (bool $needsActingAs, ?string $actingAsExpression, string $confidence, string $explanation) => new AccessProposal(
-            $panel->getId(), $panel->getAuthGuard(), $userModel, $needsActingAs, $actingAsExpression,
+            $panel->getId(), $needsActingAs, $actingAsExpression,
             $tenantExpression, $confidence, $explanation, $tenantExplanation,
         );
 
@@ -114,8 +115,6 @@ class AccessAnalyzer
     /**
      * Look for a role requirement in the tenancy gate (getTenants / canAccessTenant),
      * used when canAccessPanel itself is open but tenant access is role-gated.
-     *
-     * @param  class-string  $userModel
      */
     protected function detectTenancyRole(string $userModel): ?string
     {
@@ -179,20 +178,6 @@ class AccessAnalyzer
             '\\'.ltrim($tenantModel, '\\').'::factory()->create()',
             'No many-to-many relation from the tenant to the user model found: the generated class has to attach $user itself.',
         ];
-    }
-
-    /**
-     * @return class-string|null
-     */
-    protected function guardModel(string $guard): ?string
-    {
-        $provider = config("auth.guards.{$guard}.provider");
-
-        if ($provider === null) {
-            return null;
-        }
-
-        return config("auth.providers.{$provider}.model");
     }
 
     protected function methodSource(string $class, string $method): ?string
