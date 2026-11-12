@@ -109,9 +109,9 @@ class SmokeSweep
      */
     protected function sweepAll(): array
     {
-        $only = $this->stringList(config('filament-canary.panels.only', []));
-        $except = $this->stringList(config('filament-canary.panels.except', []));
-        $exclude = $this->stringList(config('filament-canary.exclude', []));
+        $only = $this->stringList('filament-canary.panels.only');
+        $except = $this->stringList('filament-canary.panels.except');
+        $exclude = $this->stringList('filament-canary.exclude');
         $testGuests = (bool) config('filament-canary.test_guests', true);
 
         $results = [];
@@ -222,13 +222,18 @@ class SmokeSweep
     /**
      * @return list<string>
      */
-    protected function stringList(mixed $value): array
+    protected function stringList(string $configKey): array
     {
+        $value = config($configKey) ?? [];
+
         if (! is_array($value)) {
-            return [];
+            throw new \InvalidArgumentException("[{$configKey}] must be a list of strings, got [".get_debug_type($value).'].');
         }
 
-        return array_values(array_filter($value, is_string(...)));
+        return array_values(array_map(fn (mixed $entry): string => match (true) {
+            is_string($entry), is_int($entry), is_float($entry), $entry instanceof \Stringable => (string) $entry,
+            default => throw new \InvalidArgumentException("[{$configKey}] must contain strings, got [".get_debug_type($entry).'].'),
+        }, $value));
     }
 
     /**
