@@ -148,11 +148,10 @@ it('fails canary:check when every page was skipped', function (string $command) 
         ->assertExitCode(1);
 })->with(['canary:check', 'canary:check --strict']);
 
-it('fails canary:check on a skipped page with --fail-on-skipped', function () {
+it('fails canary:check on a skipped page with --fail-on-skipped or fail_on_skipped', function () {
+    $this->artisan('canary:check')->assertExitCode(0);
     $this->artisan('canary:check --fail-on-skipped')->assertExitCode(1);
-});
 
-it('fails canary:check on a skipped page when fail_on_skipped is configured', function () {
     config()->set('filament-canary.fail_on_skipped', true);
 
     $this->artisan('canary:check')->assertExitCode(1);

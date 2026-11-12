@@ -5,6 +5,7 @@ use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\Post;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\User;
+use Illuminate\Routing\Redirector;
 
 /**
  * @return array<string, SweepResult> keyed by route name
@@ -74,4 +75,44 @@ it('rolls back every user and record it creates', function () {
 
     expect(User::count())->toBe(0)
         ->and(Post::count())->toBe(0);
+});
+
+it('gets the same results when the sweep runs twice in one app', function () {
+    $outcomes = fn () => array_map(
+        fn (SweepResult $r) => [$r->target->routeName, $r->status, $r->authorizedStatus, $r->guestStatus, $r->reason],
+        app(SmokeSweep::class)->run(),
+    );
+
+    $first = $outcomes();
+    $second = $outcomes();
+
+    expect($second)->toBe($first);
+});
+
+it('starts with a clean session after a request the test made itself', function () {
+    $this->actingAs(User::factory()->create())->get('/admin')->assertOk();
+
+    $this->canarySweep();
+});
+
+it("leaves no session behind for the test's own requests", function () {
+    $this->canarySweep();
+
+    $this->actingAs(User::factory()->create())->get('/admin')->assertOk();
+});
+
+it('leaves the default guard as it found it', function () {
+    config()->set('auth.guards.other', ['driver' => 'session', 'provider' => 'users']);
+    auth()->shouldUse('other');
+
+    app(SmokeSweep::class)->run();
+
+    expect(auth()->getDefaultDriver())->toBe('other');
+});
+
+it("leaves Laravel's redirector bound after a page that aborts in mount()", function () {
+    $result = sweepByRoute()['filament.admin.resources.secrets.index'];
+
+    expect($result->authorizedStatus)->toBe(403)
+        ->and(get_class(app('redirect')))->toBe(Redirector::class);
 });
