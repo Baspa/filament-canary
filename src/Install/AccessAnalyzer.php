@@ -21,7 +21,7 @@ class AccessAnalyzer
         [$tenantExpression, $tenantExplanation] = $this->proposeTenant($panel, $userModel);
 
         $propose = fn (bool $needsActingAs, ?string $actingAsExpression, string $confidence, string $explanation) => new AccessProposal(
-            $panel->getId(), $panel->getAuthGuard(), $userModel, $needsActingAs, $actingAsExpression,
+            $panel->getId(), $needsActingAs, $actingAsExpression,
             $tenantExpression, $confidence, $explanation, $tenantExplanation,
         );
 

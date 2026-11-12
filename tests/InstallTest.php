@@ -126,7 +126,7 @@ it('proposes a plain factory tenant that has to attach the user when no members 
 it('writes config entries that point at the generated resolver classes', function () {
     $writer = new ConfigWriter;
 
-    $class = ResolverClass::actingAs(new AccessProposal('admin', 'web', RoleUser::class, true,
+    $class = ResolverClass::actingAs(new AccessProposal('admin', true,
         "\\App\\Models\\User::factory()->create()->assignRole('admin')",
         null, 'high', 'Role-based access detected.'), 'Tests\\Canary', 'Admin');
 
@@ -138,7 +138,7 @@ it('writes config entries that point at the generated resolver classes', functio
 });
 
 it('writes no resolver class and a null block when no panel needs one', function () {
-    $proposal = new AccessProposal('admin', 'web', User::class, false, null, null, 'high', 'open');
+    $proposal = new AccessProposal('admin', false, null, null, 'high', 'open');
 
     expect(ResolverClass::forProposals([$proposal], 'Tests\\Canary'))->toBe([[], []])
         ->and((new ConfigWriter)->block([]))->toBe('null');
@@ -152,7 +152,7 @@ it('keeps every option and its docs from the published config', function () {
 });
 
 it('generates invokable resolver classes that return the proposed expressions', function () {
-    $proposal = new AccessProposal('shop.admin', 'web', RoleUser::class, true,
+    $proposal = new AccessProposal('shop.admin', true,
         '\\App\\Models\\User::factory()->create()', '\\App\\Models\\Team::factory()->hasAttached($user)->create()',
         'low', 'Plain factory user.', 'Attaches the user.');
 
@@ -200,7 +200,7 @@ it('uses Canary as the namespace when tests/ is mapped to the root namespace', f
         unlink($composer);
     }
 
-    $proposal = new AccessProposal('admin', 'web', RoleUser::class, true, '\\App\\Models\\User::factory()->create()', null, 'low', 'Plain factory user.');
+    $proposal = new AccessProposal('admin', true, '\\App\\Models\\User::factory()->create()', null, 'low', 'Plain factory user.');
     [[$class]] = ResolverClass::forProposals([$proposal], $namespace);
 
     expect($namespace)->toBe('Canary')
