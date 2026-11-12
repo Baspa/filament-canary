@@ -2,6 +2,7 @@
 
 namespace Baspa\FilamentCanary\Sweep;
 
+use Baspa\FilamentCanary\Support\ConfiguredResolver;
 use Baspa\FilamentCanary\Support\Factories;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -10,35 +11,20 @@ use Illuminate\Contracts\Auth\Authenticatable;
  * Produces the "authorized" user used to assert that a panel's pages mount.
  *
  * By default it creates a user via the guard's provider-model factory. Apps where
- * panel access requires a specific user (a role, a flag) wire a closure through
+ * panel access requires a specific user (a role, a flag) wire a resolver through
  * config('filament-canary.acting_as') — the one bounded piece of setup.
  */
 class ActingUserResolver
 {
     public function resolve(Panel $panel): ?Authenticatable
     {
-        if ($user = $this->fromConfig($panel)) {
+        $resolver = ConfiguredResolver::find('filament-canary.acting_as', $panel);
+
+        if ($resolver !== null && ($user = $resolver($panel))) {
             return $user;
         }
 
         return $this->fromFactory($panel);
-    }
-
-    protected function fromConfig(Panel $panel): ?Authenticatable
-    {
-        $config = config('filament-canary.acting_as');
-
-        $resolver = match (true) {
-            is_callable($config) => $config,
-            is_array($config) => $config[$panel->getId()] ?? $config['default'] ?? null,
-            default => null,
-        };
-
-        if (! is_callable($resolver)) {
-            return null;
-        }
-
-        return $resolver($panel);
     }
 
     protected function fromFactory(Panel $panel): ?Authenticatable

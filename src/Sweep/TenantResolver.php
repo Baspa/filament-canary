@@ -2,21 +2,26 @@
 
 namespace Baspa\FilamentCanary\Sweep;
 
+use Baspa\FilamentCanary\Support\ConfiguredResolver;
 use Baspa\FilamentCanary\Support\Factories;
 use Filament\Panel;
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 
 /**
  * Resolves the tenant used to build URLs and scope records for tenant-aware panels.
  *
  * Default: create one via the tenant-model factory. Apps where tenant membership is
- * non-trivial wire a closure through config('filament-canary.tenant').
+ * non-trivial wire a resolver through config('filament-canary.tenant'); it receives
+ * the acting user so it can make that user a member of the tenant.
  */
 class TenantResolver
 {
-    public function resolve(Panel $panel): ?Model
+    public function resolve(Panel $panel, Authenticatable $user): ?Model
     {
-        if ($tenant = $this->fromConfig($panel)) {
+        $resolver = ConfiguredResolver::find('filament-canary.tenant', $panel);
+
+        if ($resolver !== null && ($tenant = $resolver($panel, $user))) {
             return $tenant;
         }
 
@@ -27,22 +32,5 @@ class TenantResolver
         }
 
         return Factories::make($tenantModel);
-    }
-
-    protected function fromConfig(Panel $panel): ?Model
-    {
-        $config = config('filament-canary.tenant');
-
-        $resolver = match (true) {
-            is_callable($config) => $config,
-            is_array($config) => $config[$panel->getId()] ?? $config['default'] ?? null,
-            default => null,
-        };
-
-        if (! is_callable($resolver)) {
-            return null;
-        }
-
-        return $resolver($panel);
     }
 }

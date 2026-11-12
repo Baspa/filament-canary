@@ -7,6 +7,7 @@ use Baspa\FilamentCanary\Introspection\PageTargetCollector;
 use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -27,8 +28,11 @@ class SmokeSweep
         protected Requester $requester,
     ) {}
 
-    /** @var array<string, Authenticatable|null> one resolved user per panel id */
+    /** @var array<string, Authenticatable|string> per panel id: the acting user, or why there is none */
     protected array $userCache = [];
+
+    /** @var array<string, Model|string> per panel id: the tenant, or why there is none */
+    protected array $tenantCache = [];
 
     /**
      * @return list<SweepResult>
@@ -95,17 +99,19 @@ class SmokeSweep
             return SweepResult::skipped($target, 'route has parameters canary cannot resolve: '.implode(', ', $extra));
         }
 
+        $user = $this->resolveUser($panel);
+
+        if (is_string($user)) {
+            return SweepResult::skipped($target, $user);
+        }
+
         $params = [];
 
         if ($target->tenantScoped) {
-            try {
-                $tenant = $this->tenants->resolve($panel);
-            } catch (\Throwable $e) {
-                return SweepResult::skipped($target, "could not create a tenant for panel [{$panel->getId()}]: ".$e->getMessage());
-            }
+            $tenant = $this->resolveTenant($panel, $user);
 
-            if ($tenant === null) {
-                return SweepResult::skipped($target, "tenant required; configure filament-canary.tenant for panel [{$panel->getId()}]");
+            if (is_string($tenant)) {
+                return SweepResult::skipped($target, $tenant);
             }
 
             $params['tenant'] = $tenant;
@@ -123,16 +129,6 @@ class SmokeSweep
             }
 
             $params['record'] = $record;
-        }
-
-        try {
-            $user = $this->resolveUser($panel);
-        } catch (\Throwable $e) {
-            return SweepResult::skipped($target, "could not create an authorized user for panel [{$panel->getId()}]: ".$e->getMessage());
-        }
-
-        if ($user === null) {
-            return SweepResult::skipped($target, "no authorized user; configure filament-canary.acting_as for panel [{$panel->getId()}] (guard [{$target->guard}])");
         }
 
         try {
@@ -189,9 +185,47 @@ class SmokeSweep
     /**
      * Resolve one authorized user per panel and reuse it for every page. Reusing the
      * same user keeps session auth (e.g. AuthenticateSession) stable across requests.
+     *
+     * @return Authenticatable|string the user, or why the panel's pages are skipped
      */
-    protected function resolveUser(Panel $panel): ?Authenticatable
+    protected function resolveUser(Panel $panel): Authenticatable|string
     {
-        return $this->userCache[$panel->getId()] ??= $this->actingUser->resolve($panel);
+        $id = $panel->getId();
+
+        if (array_key_exists($id, $this->userCache)) {
+            return $this->userCache[$id];
+        }
+
+        try {
+            $user = $this->actingUser->resolve($panel);
+        } catch (\Throwable $e) {
+            return $this->userCache[$id] = "could not create an authorized user for panel [{$id}]: ".$e->getMessage();
+        }
+
+        return $this->userCache[$id] = $user
+            ?? "no authorized user; configure filament-canary.acting_as for panel [{$id}] (guard [{$panel->getAuthGuard()}])";
+    }
+
+    /**
+     * Resolve one tenant per panel, for the panel's acting user.
+     *
+     * @return Model|string the tenant, or why the panel's tenant pages are skipped
+     */
+    protected function resolveTenant(Panel $panel, Authenticatable $user): Model|string
+    {
+        $id = $panel->getId();
+
+        if (array_key_exists($id, $this->tenantCache)) {
+            return $this->tenantCache[$id];
+        }
+
+        try {
+            $tenant = $this->tenants->resolve($panel, $user);
+        } catch (\Throwable $e) {
+            return $this->tenantCache[$id] = "could not create a tenant for panel [{$id}]: ".$e->getMessage();
+        }
+
+        return $this->tenantCache[$id] = $tenant
+            ?? "tenant required; configure filament-canary.tenant for panel [{$id}]";
     }
 }
