@@ -4,13 +4,19 @@ on:
   push:
     paths:
       - '**.php'
+      - 'composer.json'
       - 'phpstan.neon.dist'
       - '.github/workflows/phpstan.yml'
   pull_request:
     paths:
       - '**.php'
+      - 'composer.json'
       - 'phpstan.neon.dist'
       - '.github/workflows/phpstan.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
