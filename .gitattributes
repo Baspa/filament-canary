@@ -9,6 +9,8 @@
 /art                export-ignore
 /docs               export-ignore
 /tests              export-ignore
+/workbench          export-ignore
 /.editorconfig      export-ignore
 /testbench.yaml     export-ignore
+/UPGRADING.md       export-ignore
 /phpstan.neon.dist  export-ignore
