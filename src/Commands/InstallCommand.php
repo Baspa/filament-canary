@@ -5,6 +5,7 @@ namespace Baspa\FilamentCanary\Commands;
 use Baspa\FilamentCanary\Install\AccessAnalyzer;
 use Baspa\FilamentCanary\Install\AccessProposal;
 use Baspa\FilamentCanary\Install\ConfigWriter;
+use Baspa\FilamentCanary\Install\ResolverClass;
 use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
@@ -17,7 +18,10 @@ class InstallCommand extends Command
 
     public function handle(PanelCollector $panels, AccessAnalyzer $analyzer, ConfigWriter $writer): int
     {
-        $collected = $panels->collect();
+        $collected = $panels->collect(
+            $this->panelIds('filament-canary.panels.only'),
+            $this->panelIds('filament-canary.panels.except'),
+        );
 
         if ($collected === []) {
             $this->components->warn('No Filament panels found. Is a panel registered?');
@@ -30,22 +34,58 @@ class InstallCommand extends Command
 
         $this->render($proposals);
 
+        $namespace = ResolverClass::namespaceFor(base_path('composer.json'));
+        $actingAs = array_values(array_filter(array_map(fn (AccessProposal $p) => ResolverClass::actingAs($p, $namespace), $proposals)));
+        $tenants = array_values(array_filter(array_map(fn (AccessProposal $p) => ResolverClass::tenant($p, $namespace), $proposals)));
+        $classes = [...$actingAs, ...$tenants];
+
         $path = config_path('filament-canary.php');
 
         if (File::exists($path) && ! $this->confirm('config/filament-canary.php already exists. Overwrite it?', false)) {
-            return $this->printSnippet($writer, $proposals);
+            return $this->printPreview($writer, $actingAs, $tenants);
+        }
+
+        if ($classes !== []) {
+            $this->line('The resolvers are written as invokable classes:');
+            $this->components->bulletList(array_map(fn (ResolverClass $class) => $class->path(), $classes));
         }
 
         if (! $this->confirm('Write these proposals to config/filament-canary.php?', true)) {
-            return $this->printSnippet($writer, $proposals);
+            return $this->printPreview($writer, $actingAs, $tenants);
         }
 
-        File::put($path, $writer->generate($proposals));
+        foreach ($classes as $class) {
+            $this->writeClass($class);
+        }
+
+        File::put($path, $writer->generate($actingAs, $tenants));
 
         $this->components->info('Wrote config/filament-canary.php — review the proposed resolvers.');
         $this->line('Then add a test: <comment>$this->canarySweep();</comment> (via Baspa\\FilamentCanary\\Testing\\InteractsWithCanary)');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function panelIds(string $configKey): array
+    {
+        $ids = config($configKey, []);
+
+        return is_array($ids) ? array_values(array_filter($ids, is_string(...))) : [];
+    }
+
+    protected function writeClass(ResolverClass $class): void
+    {
+        $path = base_path($class->path());
+
+        if (File::exists($path) && ! $this->confirm("{$class->path()} already exists. Overwrite it?", false)) {
+            return;
+        }
+
+        File::ensureDirectoryExists(dirname($path));
+        File::put($path, $class->source);
     }
 
     /**
@@ -65,15 +105,26 @@ class InstallCommand extends Command
     }
 
     /**
-     * @param  list<AccessProposal>  $proposals
+     * @param  list<ResolverClass>  $actingAs
+     * @param  list<ResolverClass>  $tenants
      */
-    protected function printSnippet(ConfigWriter $writer, array $proposals): int
+    protected function printPreview(ConfigWriter $writer, array $actingAs, array $tenants): int
     {
         $this->newLine();
-        $this->line('Add the following to <comment>config/filament-canary.php</comment>:');
+        $this->line('Nothing was written. To set it up yourself:');
+
+        foreach ([...$actingAs, ...$tenants] as $class) {
+            $this->newLine();
+            $this->line("<comment>{$class->path()}</comment>");
+            $this->newLine();
+            $this->line($class->source);
+        }
+
         $this->newLine();
-        $this->line("    'acting_as' => ".$writer->actingAsBlock($proposals).',');
-        $this->line("    'tenant' => ".$writer->tenantBlock($proposals).',');
+        $this->line('In <comment>config/filament-canary.php</comment>:');
+        $this->newLine();
+        $this->line("    'acting_as' => ".$writer->block($actingAs).',');
+        $this->line("    'tenant' => ".$writer->block($tenants).',');
 
         return self::SUCCESS;
     }
