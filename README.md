@@ -204,7 +204,7 @@ use Filament\Panel;
 config()->set('filament-canary.acting_as', fn (Panel $panel) => User::factory()->admin()->create());
 ```
 
-Other options: `panels.only` / `panels.except` pick the panels to sweep. `exclude` takes Resource classes (all of their pages) and Page or controller classes (that route only, such as `Dashboard::class`, `EditProfile::class` or a plugin's page), and applies to every panel. `test_guests`, `strict_authorization`, `fail_on_skipped` and `use_transaction` are explained in the published config.
+Other options: `panels.only` / `panels.except` pick the panels to sweep. `exclude` takes Resource classes (all of their pages) and Page or controller classes (that route only, such as `Dashboard::class`, `EditProfile::class` or a plugin's page), and applies to every panel. `allowed_environments` lists the environments the sweep may run in (see [Safety](#safety)). `test_guests`, `strict_authorization`, `fail_on_skipped` and `use_transaction` are explained in the published config.
 
 ## Safety
 
@@ -213,9 +213,21 @@ authenticated user, so it takes two precautions:
 
 - **It runs in a database transaction and rolls it back** — nothing it creates is
   persisted. (Covers the default connection; disable with `use_transaction => false`.)
-- **It refuses to run in the `production` environment** — a rollback can't undo the other
-  side effects of hitting every page as an admin (queued jobs, mail, audit logs, writes on
-  other connections), so Canary simply won't run there.
+- **It only runs in the environments listed in `allowed_environments`** — `local` and
+  `testing` by default. A rollback can't undo the other side effects of hitting every page
+  as an admin (queued jobs, mail, audit logs, writes on other connections), so Canary
+  refuses to run anywhere else, and never runs in `production`, even when you list it.
+
+If you run `canary:check` with another `APP_ENV`, such as `ci` or `staging`, add that
+environment to the list in `config/filament-canary.php` (publish the config first if you
+haven't):
+
+```php
+'allowed_environments' => ['local', 'testing', 'ci'],
+```
+
+Without it, `canary:check` stops with an error that names the environment and the line to
+set, and `canarySweep()` fails with the same message.
 
 ## What's out of scope (on purpose)
 

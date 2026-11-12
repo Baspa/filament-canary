@@ -4,6 +4,7 @@ use Baspa\FilamentCanary\Introspection\PageTarget;
 use Baspa\FilamentCanary\Introspection\PageTargetCollector;
 use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Baspa\FilamentCanary\Sweep\ActingUserResolver;
+use Baspa\FilamentCanary\Sweep\EnvironmentNotAllowedException;
 use Baspa\FilamentCanary\Sweep\RecordResolver;
 use Baspa\FilamentCanary\Sweep\Requester;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
@@ -200,16 +201,34 @@ it('runs without a transaction when use_transaction is disabled', function () {
     expect($results[0]->status)->toBe(SweepStatus::Passed);
 });
 
-it('refuses to run in the production environment', function () {
+it('refuses to run in the production environment, even when allowed_environments lists it', function () {
+    config()->set('filament-canary.allowed_environments', ['production']);
+
     $sweep = new class(new PanelCollector, new PageTargetCollector(app('router')), new ActingUserResolver, new RecordResolver, new TenantResolver, new FakeRequester) extends SmokeSweep
     {
-        protected function isProduction(): bool
+        protected function currentEnvironment(): string
         {
-            return true;
+            return 'production';
         }
     };
 
-    expect(fn () => $sweep->run())->toThrow(RuntimeException::class, 'production');
+    expect(fn () => $sweep->run())->toThrow(EnvironmentNotAllowedException::class, 'production');
+});
+
+it('refuses to run in an environment that allowed_environments does not list', function () {
+    app()->detectEnvironment(fn () => 'staging');
+
+    expect(fn () => sweepWith([target()], new FakeRequester))->toThrow(
+        EnvironmentNotAllowedException::class,
+        "APP_ENV [staging], because filament-canary.allowed_environments doesn't list it. To run the sweep here, set 'allowed_environments' => ['local', 'testing', 'staging'] in config/filament-canary.php",
+    );
+});
+
+it('runs in an environment that allowed_environments lists', function () {
+    app()->detectEnvironment(fn () => 'ci');
+    config()->set('filament-canary.allowed_environments', ['ci']);
+
+    expect(sweepWith([target()], new FakeRequester)[0]->status)->toBe(SweepStatus::Passed);
 });
 
 it('surfaces the real error when the acting user cannot be created', function () {

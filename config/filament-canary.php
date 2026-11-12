@@ -55,6 +55,17 @@ return [
 
     /*
      |--------------------------------------------------------------------------
+     | Allowed environments
+     |--------------------------------------------------------------------------
+     | The APP_ENV values canary may run in; it refuses to run in any other
+     | environment. If CI runs `canary:check` with another APP_ENV, such as `ci`
+     | or `staging`, add it here. `production` is always refused, even when it
+     | is listed.
+     */
+    'allowed_environments' => ['local', 'testing'],
+
+    /*
+     |--------------------------------------------------------------------------
      | Strict authorization
      |--------------------------------------------------------------------------
      | When true, pages the resolved user could not reach (needs-auth) count as

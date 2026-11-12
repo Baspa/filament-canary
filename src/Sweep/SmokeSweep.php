@@ -14,7 +14,6 @@ use Livewire\Component;
 use Livewire\EventBus;
 use Livewire\Features\SupportLazyLoading\SupportLazyLoading;
 use Livewire\Livewire;
-use RuntimeException;
 
 /**
  * The engine. Walks every Filament panel's pages and, for each, asserts that an
@@ -44,13 +43,7 @@ class SmokeSweep
      */
     public function run(): array
     {
-        if ($this->isProduction()) {
-            throw new RuntimeException(
-                'filament-canary refuses to run in the [production] environment. The sweep requests '.
-                'every page as an authenticated user, which can trigger real side effects (queued jobs, '.
-                "mail, audit logs, writes on other connections) that a database rollback won't undo."
-            );
-        }
+        $this->ensureEnvironmentIsAllowed();
 
         // Lazy widgets, lazy relation managers and deferred tables render their content in a
         // later Livewire request the sweep never makes, so their errors would pass unseen.
@@ -99,9 +92,24 @@ class SmokeSweep
         }
     }
 
-    protected function isProduction(): bool
+    protected function ensureEnvironmentIsAllowed(): void
     {
-        return app()->environment('production');
+        $environment = $this->currentEnvironment();
+
+        if ($environment === 'production') {
+            throw EnvironmentNotAllowedException::production();
+        }
+
+        $allowed = (array) config('filament-canary.allowed_environments', ['local', 'testing']);
+
+        if (! in_array($environment, $allowed, true)) {
+            throw EnvironmentNotAllowedException::notListed($environment, $allowed);
+        }
+    }
+
+    protected function currentEnvironment(): string
+    {
+        return app()->environment();
     }
 
     /**
