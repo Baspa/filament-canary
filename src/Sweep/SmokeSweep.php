@@ -175,18 +175,16 @@ class SmokeSweep
 
         $authorized = $this->requester->get($url, $user, $target->guard);
 
-        if ($authorized >= 500) {
-            return SweepResult::failed($target, "authorized request returned {$authorized}", $authorized);
-        }
-
         if (in_array($authorized, [401, 403], true)) {
             return SweepResult::needsAuth($target, "authorized user was denied ({$authorized}); configure filament-canary.acting_as for panel [{$panel->getId()}]", $authorized);
         }
 
-        if ($authorized === 404) {
-            return ($target->requiresRecord || $target->tenantScoped)
-                ? SweepResult::skipped($target, 'got 404 — the generated record/tenant is likely not visible to this page; provide a resolver via config')
-                : SweepResult::failed($target, 'authorized request returned 404', $authorized);
+        if ($authorized === 404 && ($target->tenantScoped || $target->requiresRecord)) {
+            return SweepResult::skipped($target, $this->notFoundReason($target));
+        }
+
+        if ($authorized >= 400) {
+            return SweepResult::failed($target, "authorized request returned {$authorized}", $authorized);
         }
 
         if ($authorized >= 300) {
@@ -203,7 +201,26 @@ class SmokeSweep
             return SweepResult::failed($target, "guest access allowed ({$guest}) — authorization leak", $authorized, $guest);
         }
 
+        if ($guest >= 500) {
+            return SweepResult::failed($target, "guest request returned {$guest}", $authorized, $guest);
+        }
+
         return SweepResult::passed($target, $authorized, $guest);
+    }
+
+    protected function notFoundReason(PageTarget $target): string
+    {
+        $causes = [];
+
+        if ($target->tenantScoped) {
+            $causes[] = "the acting user can't access the generated tenant (return a tenant they belong to from the filament-canary.tenant resolver, which receives the panel and the acting user)";
+        }
+
+        if ($target->requiresRecord) {
+            $causes[] = "the generated [{$target->modelClass}] record isn't visible to the page's query (fix the model factory or query scopes, or exclude the page)";
+        }
+
+        return 'got 404: '.implode(', or ', $causes);
     }
 
     /**
