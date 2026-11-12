@@ -6,8 +6,13 @@ use Baspa\FilamentCanary\Introspection\PageTarget;
 use Baspa\FilamentCanary\Introspection\PageTargetCollector;
 use Baspa\FilamentCanary\Introspection\PanelCollector;
 use Filament\Panel;
+use Filament\Tables\Contracts\HasTable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\DB;
+use Livewire\Component;
+use Livewire\EventBus;
+use Livewire\Features\SupportLazyLoading\SupportLazyLoading;
+use Livewire\Livewire;
 use RuntimeException;
 
 /**
@@ -43,6 +48,33 @@ class SmokeSweep
             );
         }
 
+        // Lazy widgets, lazy relation managers and deferred tables render their content in a
+        // later Livewire request the sweep never makes, so their errors would pass unseen.
+        $lazyLoadingWasDisabled = SupportLazyLoading::$disableWhileTesting;
+        Livewire::withoutLazyLoading();
+        $stopLoadingDeferredTables = app(EventBus::class)->on('mount', $this->loadDeferredTable(...));
+
+        try {
+            return $this->sweepInTransaction();
+        } finally {
+            $stopLoadingDeferredTables();
+            // The flag is process-wide: leaving it on would change how the app's other tests render.
+            SupportLazyLoading::$disableWhileTesting = $lazyLoadingWasDisabled;
+        }
+    }
+
+    protected function loadDeferredTable(Component $component): void
+    {
+        if ($component instanceof HasTable && method_exists($component, 'loadTable')) {
+            $component->loadTable();
+        }
+    }
+
+    /**
+     * @return list<SweepResult>
+     */
+    protected function sweepInTransaction(): array
+    {
         if (! (bool) config('filament-canary.use_transaction', true)) {
             return $this->sweepAll();
         }
