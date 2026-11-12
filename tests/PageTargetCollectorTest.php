@@ -5,6 +5,12 @@ use Baspa\FilamentCanary\Introspection\PageTargetCollector;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
+use Baspa\FilamentCanary\Tests\Fixtures\Filament\Pages\AccountProfile;
+use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\CommentedPostResource;
+use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\CommentedPostResource\Pages\ManagePostComments;
+use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\PostCommentResource;
+use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\PostCommentResource\Pages\CreatePostComment;
+use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\PostCommentResource\Pages\EditPostComment;
 use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\PostResource;
 use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\PostResource\Pages\CreatePost;
 use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\PostResource\Pages\EditPost;
@@ -15,6 +21,9 @@ use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\SecretResource\Pages\
 use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\TagResource;
 use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\TagResource\Pages\EditTag;
 use Baspa\FilamentCanary\Tests\Fixtures\Filament\Resources\TagResource\Pages\ListTags;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\Post;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\PostComment;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\Tag;
 use Filament\Facades\Filament;
 use Filament\Http\Controllers\RedirectToHomeController;
 use Filament\Http\Controllers\RedirectToTenantController;
@@ -32,6 +41,16 @@ function routeNamesCollectedFor(string $panelId, array $exclude = []): array
     );
 }
 
+/**
+ * @return array<string, array{0: ?string, 1: ?string, 2: ?string}> routeName => [resourceClass, modelClass, pageClass]
+ */
+function targetClassesFor(string $panelId): array
+{
+    return collect(app(PageTargetCollector::class)->forPanel(Filament::getPanel($panelId)))
+        ->mapWithKeys(fn (PageTarget $target) => [$target->routeName => [$target->resourceClass, $target->modelClass, $target->pageClass]])
+        ->all();
+}
+
 function registeredControllerClass(string $routeName): ?string
 {
     $route = app('router')->getRoutes()->getByName($routeName);
@@ -41,25 +60,22 @@ function registeredControllerClass(string $routeName): ?string
     return $route->getControllerClass();
 }
 
-it('collects the same admin pages as before, with their resource and page classes', function () {
-    $targets = collect(app(PageTargetCollector::class)->forPanel(Filament::getPanel('admin')))
-        ->mapWithKeys(fn (PageTarget $target) => [$target->routeName => [$target->resourceClass, $target->pageClass]])
-        ->all();
-
-    expect($targets)->toEqual([
-        'filament.admin.pages.dashboard' => [null, Dashboard::class],
-        'filament.admin.resources.posts.index' => [PostResource::class, ListPosts::class],
-        'filament.admin.resources.posts.create' => [PostResource::class, CreatePost::class],
-        'filament.admin.resources.posts.view' => [PostResource::class, ViewPost::class],
-        'filament.admin.resources.posts.edit' => [PostResource::class, EditPost::class],
-        'filament.admin.resources.tags.index' => [TagResource::class, ListTags::class],
-        'filament.admin.resources.tags.edit' => [TagResource::class, EditTag::class],
-        'filament.admin.resources.secrets.index' => [SecretResource::class, ListSecrets::class],
+it('collects the same admin pages as before, with their resource, model and page classes', function () {
+    expect(targetClassesFor('admin'))->toEqual([
+        'filament.admin.pages.dashboard' => [null, null, Dashboard::class],
+        'filament.admin.resources.posts.index' => [PostResource::class, Post::class, ListPosts::class],
+        'filament.admin.resources.posts.create' => [PostResource::class, Post::class, CreatePost::class],
+        'filament.admin.resources.posts.view' => [PostResource::class, Post::class, ViewPost::class],
+        'filament.admin.resources.posts.edit' => [PostResource::class, Post::class, EditPost::class],
+        'filament.admin.resources.tags.index' => [TagResource::class, Tag::class, ListTags::class],
+        'filament.admin.resources.tags.edit' => [TagResource::class, Tag::class, EditTag::class],
+        'filament.admin.resources.secrets.index' => [SecretResource::class, Post::class, ListSecrets::class],
     ]);
 });
 
-it('collects the profile page but none of the auth flows', function () {
+it('collects the profile page but no other route in the auth group', function () {
     foreach ([
+        'filament.profile-page.auth.oauth.redirect',
         'filament.profile-page.auth.login',
         'filament.profile-page.auth.register',
         'filament.profile-page.auth.password-reset.request',
@@ -94,24 +110,67 @@ it('passes the profile page in a real sweep', function () {
     }
 });
 
-it('recognises auth flows on a multi-domain panel, whose route names include the domain', function () {
+it('collects a custom profile page by its class on every domain, but no other auth route', function () {
     foreach (['one.canary.test', 'two.canary.test'] as $domain) {
         foreach ([
             'auth.login',
             'auth.email-verification.prompt',
             'auth.email-verification.verify',
             'auth.multi-factor-authentication.set-up-required',
-        ] as $authFlowRoute) {
-            registeredControllerClass("filament.multi-domain-auth.{$domain}.{$authFlowRoute}");
+        ] as $authRoute) {
+            registeredControllerClass("filament.multi-domain.{$domain}.{$authRoute}");
         }
     }
 
-    expect(routeNamesCollectedFor('multi-domain-auth'))->toEqualCanonicalizing([
-        'filament.multi-domain-auth.one.canary.test.pages.dashboard',
-        'filament.multi-domain-auth.one.canary.test.auth.profile',
-        'filament.multi-domain-auth.two.canary.test.pages.dashboard',
-        'filament.multi-domain-auth.two.canary.test.auth.profile',
+    $authTargets = array_filter(
+        targetClassesFor('multi-domain'),
+        fn (string $routeName) => str_contains($routeName, '.auth.'),
+        ARRAY_FILTER_USE_KEY,
+    );
+
+    expect($authTargets)->toEqual([
+        'filament.multi-domain.one.canary.test.auth.account' => [null, null, AccountProfile::class],
+        'filament.multi-domain.two.canary.test.auth.account' => [null, null, AccountProfile::class],
     ]);
+});
+
+it('finds the resource of resource pages on every domain of a multi-domain panel', function () {
+    $resourceTargets = array_filter(
+        targetClassesFor('multi-domain'),
+        fn (string $routeName) => str_contains($routeName, '.resources.'),
+        ARRAY_FILTER_USE_KEY,
+    );
+
+    expect($resourceTargets)->toEqual([
+        'filament.multi-domain.one.canary.test.resources.posts.index' => [PostResource::class, Post::class, ListPosts::class],
+        'filament.multi-domain.one.canary.test.resources.posts.create' => [PostResource::class, Post::class, CreatePost::class],
+        'filament.multi-domain.one.canary.test.resources.posts.view' => [PostResource::class, Post::class, ViewPost::class],
+        'filament.multi-domain.one.canary.test.resources.posts.edit' => [PostResource::class, Post::class, EditPost::class],
+        'filament.multi-domain.two.canary.test.resources.posts.index' => [PostResource::class, Post::class, ListPosts::class],
+        'filament.multi-domain.two.canary.test.resources.posts.create' => [PostResource::class, Post::class, CreatePost::class],
+        'filament.multi-domain.two.canary.test.resources.posts.view' => [PostResource::class, Post::class, ViewPost::class],
+        'filament.multi-domain.two.canary.test.resources.posts.edit' => [PostResource::class, Post::class, EditPost::class],
+    ]);
+});
+
+it('finds the resource of nested resource pages and relation pages from the page class', function () {
+    expect(targetClassesFor('nested-resource'))->toEqual([
+        'filament.nested-resource.resources.posts.comments' => [CommentedPostResource::class, Post::class, ManagePostComments::class],
+        'filament.nested-resource.resources.posts.post-comments.create' => [PostCommentResource::class, PostComment::class, CreatePostComment::class],
+        'filament.nested-resource.resources.posts.post-comments.edit' => [PostCommentResource::class, PostComment::class, EditPostComment::class],
+    ]);
+});
+
+it('keeps the nested resource pages when the parent resource is excluded', function () {
+    expect(routeNamesCollectedFor('nested-resource', [CommentedPostResource::class]))->toEqualCanonicalizing([
+        'filament.nested-resource.resources.posts.post-comments.create',
+        'filament.nested-resource.resources.posts.post-comments.edit',
+    ]);
+});
+
+it('keeps the parent resource pages when the nested resource is excluded', function () {
+    expect(routeNamesCollectedFor('nested-resource', [PostCommentResource::class]))
+        ->toBe(['filament.nested-resource.resources.posts.comments']);
 });
 
 it('skips the redirect to the tenant', function () {

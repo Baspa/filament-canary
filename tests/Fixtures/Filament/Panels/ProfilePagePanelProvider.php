@@ -14,6 +14,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class ProfilePagePanelProvider extends PanelProvider
@@ -28,6 +29,7 @@ class ProfilePagePanelProvider extends PanelProvider
             ->passwordReset()
             ->emailChangeVerification()
             ->profile()
+            ->routes(fn () => Route::get('/oauth/redirect', fn () => 'redirect')->name('auth.oauth.redirect'))
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
