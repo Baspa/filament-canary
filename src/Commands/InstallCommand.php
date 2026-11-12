@@ -122,9 +122,13 @@ class InstallCommand extends Command
         $rows = array_map(fn (AccessProposal $p) => [
             $p->panelId,
             $p->needsActingAs ? ($p->actingAsExpression !== null ? 'acting_as proposed' : 'manual') : 'open (no resolver)',
-            $p->tenantExpression !== null ? 'yes' : '—',
+            match (true) {
+                $p->tenantExpression !== null => 'resolver proposed',
+                $p->tenantExplanation !== null => 'default',
+                default => '—',
+            },
             $p->confidence,
-            $p->explanation,
+            trim("{$p->explanation} {$p->tenantExplanation}"),
         ], $proposals);
 
         $this->table(['Panel', 'Access', 'Tenant', 'Confidence', 'Notes'], $rows);

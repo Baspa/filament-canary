@@ -119,7 +119,9 @@ class ResolverClass
                 'Filament\Panel',
                 'Illuminate\Contracts\Auth\Authenticatable',
                 'Illuminate\Database\Eloquent\Model',
-            ], 'Panel $panel, Authenticatable $user', 'Model', $proposal->tenantExpression),
+            ], 'Panel $panel, Authenticatable $user', 'Model', $proposal->tenantExpression,
+                "Make \$user a member of the tenant so canAccessTenant() lets it in, e.g. ->hasAttached(\$user, [], 'members').",
+            ),
         );
     }
 
@@ -162,9 +164,10 @@ class ResolverClass
     /**
      * @param  list<string>  $imports
      */
-    protected static function render(string $namespace, string $name, array $imports, string $parameters, string $returnType, string $expression): string
+    protected static function render(string $namespace, string $name, array $imports, string $parameters, string $returnType, string $expression, ?string $hint = null): string
     {
         $uses = implode("\n", array_map(fn (string $import) => "use {$import};", $imports));
+        $hint = $hint === null ? '' : "// {$hint}\n        ";
 
         return <<<PHP
             <?php
@@ -177,7 +180,7 @@ class ResolverClass
             {
                 public function __invoke({$parameters}): {$returnType}
                 {
-                    return {$expression};
+                    {$hint}return {$expression};
                 }
             }
 

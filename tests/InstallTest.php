@@ -87,23 +87,25 @@ it('proposes a plain factory user for a tenancy role gate without assignRole()',
         ->and($p->explanation)->toContain("role 'owner'");
 });
 
-it('proposes a tenant that the acting user is attached to when the tenant has a members relation', function () {
+it('leaves the tenant to the default when the tenant has a members relation to the user', function () {
     config()->set('auth.guards.web.provider', 'users');
     config()->set('auth.providers.users.model', TeamMember::class);
 
     $p = (new AccessAnalyzer)->analyze(Panel::make()->id('shop')->tenant(TenantTeam::class));
 
-    expect($p->tenantExpression)->toBe('\\'.TenantTeam::class."::factory()->hasAttached(\$user, [], 'members')->create()");
+    expect($p->tenantExpression)->toBeNull()
+        ->and($p->tenantExplanation)->toBe('The default tenant attaches the acting user via members().')
+        ->and(ResolverClass::forProposals([$p], 'Tests\\Canary')[1])->toBe([]);
 });
 
-it('proposes a plain factory tenant with a hint when no members relation is found', function () {
+it('proposes a plain factory tenant that has to attach the user when no members relation is found', function () {
     config()->set('auth.guards.web.provider', 'users');
     config()->set('auth.providers.users.model', TenantUser::class);
 
     $p = (new AccessAnalyzer)->analyze(Panel::make()->id('shop')->tenant(Team::class));
 
     expect($p->tenantExpression)->toBe('\\'.Team::class.'::factory()->create()')
-        ->and($p->tenantExplanation)->toContain('hasAttached($user)');
+        ->and($p->tenantExplanation)->toContain('has to attach $user');
 });
 
 it('writes config entries that point at the generated resolver classes', function () {
@@ -147,6 +149,7 @@ it('generates invokable resolver classes that return the proposed expressions', 
         ->and($actingAs->source)->toContain('return \\App\\Models\\User::factory()->create();')
         ->and($tenant->className())->toBe('Tests\\Canary\\ShopAdminTenant')
         ->and($tenant->source)->toContain('public function __invoke(Panel $panel, Authenticatable $user): Model')
+        ->and($tenant->source)->toContain("// Make \$user a member of the tenant so canAccessTenant() lets it in, e.g. ->hasAttached(\$user, [], 'members').\n        return ")
         ->and($tenant->note)->toBe('Attaches the user.');
 
     // TOKEN_PARSE makes token_get_all() throw a ParseError on invalid PHP.

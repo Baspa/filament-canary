@@ -169,19 +169,15 @@ class AccessAnalyzer
             return [null, null];
         }
 
-        $tenant = '\\'.ltrim($tenantModel, '\\');
         $relation = $userModel === null ? null : TenantMembership::relation($tenantModel, $userModel);
 
-        if ($relation === null) {
-            return [
-                "{$tenant}::factory()->create()",
-                'Attach $user to the tenant (e.g. ->hasAttached($user)) so canAccessTenant() lets it in.',
-            ];
+        if ($relation !== null) {
+            return [null, "The default tenant attaches the acting user via {$relation}()."];
         }
 
         return [
-            "{$tenant}::factory()->hasAttached(\$user, [], '{$relation}')->create()",
-            "Makes the acting user a member through {$relation}(). Adjust if membership needs more (a role, a pivot value).",
+            '\\'.ltrim($tenantModel, '\\').'::factory()->create()',
+            'No many-to-many relation from the tenant to the user model found: the generated class has to attach $user itself.',
         ];
     }
 

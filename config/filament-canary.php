@@ -87,10 +87,12 @@ return [
      |--------------------------------------------------------------------------
      | Tenant resolver
      |--------------------------------------------------------------------------
-     | For tenant-aware panels, how to build the tenant used in URLs. Defaults to the
-     | tenant-model factory, but the acting user only gets in when canAccessTenant()
-     | allows it, so a resolver usually attaches that user. Accepts the same values
-     | as `acting_as`; the resolver gets the panel and the acting user:
+     | For tenant-aware panels, how to build the tenant used in URLs. By default canary
+     | creates one with the tenant-model factory and attaches the acting user through
+     | the tenant's many-to-many relation to the user model: `members()`, `users()` or
+     | the user model's plural (`teamMembers()` for TeamMember). Configure a resolver
+     | when there is no such relation, or when access depends on more. It accepts the
+     | same values as `acting_as` and gets the panel and the acting user:
      |
      |   'tenant' => \Tests\Canary\AdminTenant::class,
      |
@@ -98,7 +100,7 @@ return [
      |   {
      |       public function __invoke(Panel $panel, Authenticatable $user): Model
      |       {
-     |           return Team::factory()->hasAttached($user, [], 'members')->create();
+     |           return Team::factory()->hasAttached($user, ['role' => 'owner'], 'members')->create();
      |       }
      |   }
      */

@@ -16,11 +16,12 @@ class AccessProposal
         public readonly bool $needsActingAs,
         /** PHP expression the acting_as resolver returns ($panel in scope), or null when none is needed. */
         public readonly ?string $actingAsExpression,
-        /** PHP expression the tenant resolver returns ($panel and $user in scope), or null without tenancy. */
+        /** PHP expression the tenant resolver returns ($panel and $user in scope), or null when the default tenant will do. */
         public readonly ?string $tenantExpression,
         /** high | medium | low | none */
         public readonly string $confidence,
         public readonly string $explanation,
+        /** How the panel's tenant is handled, or null without tenancy. */
         public readonly ?string $tenantExplanation = null,
     ) {}
 }

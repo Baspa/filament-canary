@@ -5,6 +5,7 @@ use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\RoleUser;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\TeamMember;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\TenantTeam;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 
@@ -43,15 +44,31 @@ it('writes a config that config:cache accepts', function () {
     ]);
 });
 
-it('generates a tenant resolver that gets the team panel through', function () {
-    config()->set('auth.providers.users.model', TeamMember::class);
+it('generates a tenant stub that has to attach the user when there is no members relation', function () {
+    config()->set('auth.providers.users.model', RoleUser::class);
     config()->set('filament-canary.panels.only', ['team']);
 
     $this->artisan('canary:install')
         ->expectsConfirmation('Write these proposals to config/filament-canary.php?', 'yes')
         ->assertExitCode(0);
 
-    require_once base_path('tests/Canary/TeamTenant.php');
+    expect(file_get_contents(base_path('tests/Canary/TeamTenant.php')))
+        ->toContain('return \\'.TenantTeam::class.'::factory()->create();')
+        ->toContain('Make $user a member of the tenant so canAccessTenant() lets it in')
+        ->and((require config_path('filament-canary.php'))['tenant'])->toBe(['team' => 'Tests\\Canary\\TeamTenant']);
+});
+
+it('leaves the tenant to the default when it attaches the user, and every tenant page passes', function () {
+    config()->set('auth.providers.users.model', TeamMember::class);
+    config()->set('filament-canary.panels.only', ['team']);
+
+    $this->artisan('canary:install')
+        ->expectsOutputToContain('The default tenant attaches the acting user via members().')
+        ->expectsConfirmation('Write these proposals to config/filament-canary.php?', 'yes')
+        ->assertExitCode(0);
+
+    expect(base_path('tests/Canary'))->not->toBeDirectory();
+
     config()->set('filament-canary.tenant', (require config_path('filament-canary.php'))['tenant']);
 
     $tenantScoped = array_filter(
