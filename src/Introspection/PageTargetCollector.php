@@ -2,7 +2,10 @@
 
 namespace Baspa\FilamentCanary\Introspection;
 
+use Filament\Http\Controllers\RedirectToHomeController;
+use Filament\Http\Controllers\RedirectToTenantController;
 use Filament\Panel;
+use Filament\Resources\Pages\Page as ResourcePage;
 use Illuminate\Routing\Route;
 use Illuminate\Routing\Router;
 
@@ -12,21 +15,28 @@ use Illuminate\Routing\Router;
  */
 class PageTargetCollector
 {
+    /**
+     * These only redirect to a panel page, which is swept on its own.
+     */
+    protected const REDIRECT_CONTROLLERS = [
+        RedirectToHomeController::class,
+        RedirectToTenantController::class,
+    ];
+
     public function __construct(
         protected Router $router,
     ) {}
 
     /**
-     * @param  list<string>  $excludeResources  Resource/page class names to skip
+     * @param  list<string>  $exclude  Resource or page class names to skip
      * @return list<PageTarget>
      */
-    public function forPanel(Panel $panel, array $excludeResources = []): array
+    public function forPanel(Panel $panel, array $exclude = []): array
     {
         $panelId = $panel->getId();
         $guard = $panel->getAuthGuard();
         $prefix = "filament.{$panelId}.";
-
-        $resourceByBase = $this->resourceRouteBaseMap($panel, $excludeResources);
+        $profilePage = $panel->getProfilePage();
 
         $targets = [];
 
@@ -42,14 +52,22 @@ class PageTargetCollector
                 continue;
             }
 
-            // Authentication flows are not pages to smoke-test.
-            if (str_contains($name, '.auth.')) {
+            $pageClass = $route->getControllerClass();
+            $isProfilePage = $pageClass !== null && $pageClass === $profilePage;
+
+            // Login, password reset, verification and plugin flows (socialite, 2FA challenges)
+            // are meant for guests or signed links, so the sweep's checks don't apply to them.
+            if (str_contains($name, '.auth.') && ! $isProfilePage) {
                 continue;
             }
 
-            [$resourceClass, $modelClass] = $this->matchResource($name, $resourceByBase);
+            if (in_array($pageClass, self::REDIRECT_CONTROLLERS, true)) {
+                continue;
+            }
 
-            if ($resourceClass !== null && in_array($resourceClass, $excludeResources, true)) {
+            $resourceClass = $this->resourceOf($pageClass);
+
+            if (in_array($resourceClass, $exclude, true) || in_array($pageClass, $exclude, true)) {
                 continue;
             }
 
@@ -63,8 +81,9 @@ class PageTargetCollector
                 parameterNames: $params,
                 requiresRecord: in_array('record', $params, true),
                 tenantScoped: in_array('tenant', $params, true),
-                modelClass: $modelClass,
+                modelClass: $resourceClass === null ? null : $resourceClass::getModel(),
                 resourceClass: $resourceClass,
+                pageClass: $pageClass,
             );
         }
 
@@ -72,36 +91,14 @@ class PageTargetCollector
     }
 
     /**
-     * @param  list<string>  $excludeResources
-     * @return array<string, class-string> routeBaseName => resourceClass
+     * @return class-string|null
      */
-    protected function resourceRouteBaseMap(Panel $panel, array $excludeResources): array
+    protected function resourceOf(?string $pageClass): ?string
     {
-        $map = [];
-
-        foreach ($panel->getResources() as $resourceClass) {
-            if (in_array($resourceClass, $excludeResources, true)) {
-                continue;
-            }
-
-            $map[$resourceClass::getRouteBaseName($panel)] = $resourceClass;
+        if ($pageClass === null || ! is_subclass_of($pageClass, ResourcePage::class)) {
+            return null;
         }
 
-        return $map;
-    }
-
-    /**
-     * @param  array<string, class-string>  $resourceByBase
-     * @return array{0: ?class-string, 1: ?string} [resourceClass, modelClass]
-     */
-    protected function matchResource(string $routeName, array $resourceByBase): array
-    {
-        foreach ($resourceByBase as $base => $resourceClass) {
-            if ($routeName === $base || str_starts_with($routeName, $base.'.')) {
-                return [$resourceClass, $resourceClass::getModel()];
-            }
-        }
-
-        return [null, null];
+        return $pageClass::getResource();
     }
 }
