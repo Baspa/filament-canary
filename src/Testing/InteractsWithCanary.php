@@ -4,6 +4,7 @@ namespace Baspa\FilamentCanary\Testing;
 
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
+use Baspa\FilamentCanary\Sweep\SweepVerdict;
 
 /**
  * Drop this into a Pest/PHPUnit test to enforce the whole sweep in one assertion:
@@ -14,7 +15,7 @@ use Baspa\FilamentCanary\Sweep\SweepResult;
 trait InteractsWithCanary
 {
     /**
-     * Run the sweep and assert no page failed. Returns every result for further assertions.
+     * Run the sweep and assert it passed. Returns every result for further assertions.
      *
      * @return list<SweepResult>
      */
@@ -22,26 +23,26 @@ trait InteractsWithCanary
     {
         $results = app(SmokeSweep::class)->run();
 
-        $strict = (bool) config('filament-canary.strict_authorization', false);
+        $verdict = SweepVerdict::judge($results);
 
-        $failures = array_values(array_filter(
-            $results,
-            fn (SweepResult $result) => $result->isFailure($strict),
-        ));
-
-        $this->assertSame([], $failures, $this->describeFailures($failures));
+        $this->assertTrue($verdict->passed(), $this->describeVerdict($verdict, $results));
 
         return $results;
     }
 
     /**
-     * @param  list<SweepResult>  $failures
+     * @param  list<SweepResult>  $results
      */
-    protected function describeFailures(array $failures): string
+    protected function describeVerdict(SweepVerdict $verdict, array $results): string
     {
-        if ($failures === []) {
+        if ($verdict->passed()) {
             return '';
         }
+
+        $headline = $verdict->problem ?? count($verdict->failures).' Filament page(s) failed the canary sweep:';
+
+        // With nothing passed and nothing failed, the skip and needs-auth reasons are the only clue.
+        $listed = $verdict->failures === [] ? $results : $verdict->failures;
 
         $lines = array_map(
             fn (SweepResult $result) => sprintf(
@@ -50,9 +51,9 @@ trait InteractsWithCanary
                 $result->target->label(),
                 $result->reason ?? 'unknown',
             ),
-            $failures,
+            $listed,
         );
 
-        return count($failures)." Filament page(s) failed the canary sweep:\n".implode("\n", $lines);
+        return implode("\n", [$headline, ...$lines]);
     }
 }

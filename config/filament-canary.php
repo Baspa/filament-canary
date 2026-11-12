@@ -33,6 +33,17 @@ return [
 
     /*
      |--------------------------------------------------------------------------
+     | Fail on skipped pages
+     |--------------------------------------------------------------------------
+     | When true, pages canary could not sweep (skipped) count as failures, so a
+     | missing factory or resolver can't leave a page untested. `canary:check
+     | --fail-on-skipped` does the same for one run. A sweep that found no pages,
+     | or where no page passed, always fails.
+     */
+    'fail_on_skipped' => false,
+
+    /*
+     |--------------------------------------------------------------------------
      | Database transaction
      |--------------------------------------------------------------------------
      | The sweep creates users/records via factories. With this on, the whole run
