@@ -201,8 +201,8 @@ class SmokeSweep
             return SweepResult::failed($target, "guest access allowed ({$guest}) — authorization leak", $authorized, $guest);
         }
 
-        if ($guest >= 500) {
-            return SweepResult::failed($target, "guest request returned {$guest}", $authorized, $guest);
+        if ($guest >= 400 && ! in_array($guest, [401, 403], true)) {
+            return SweepResult::failed($target, "guest request returned {$guest}; can't confirm guests are denied", $authorized, $guest);
         }
 
         return SweepResult::passed($target, $authorized, $guest);

@@ -8,8 +8,8 @@ enum SweepStatus: string
     case Passed = 'passed';
 
     /**
-     * The authorized request returned a server error or an unexpected 4xx, or a guest
-     * got a server error or got in. A real failure.
+     * The authorized request returned a server error or an unexpected 4xx, or a guest got
+     * in or got anything other than a redirect, 401 or 403. A real failure.
      */
     case Failed = 'failed';
 

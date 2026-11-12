@@ -141,20 +141,20 @@ it('marks a guest 2xx on a protected page as an authorization leak', function ()
         ->and($results[0]->reason)->toContain('leak');
 });
 
-it('marks a guest 5xx as a failure', function () {
-    $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: 500));
+it('fails a guest response that does not show a denial', function (int $guest) {
+    $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: $guest));
 
     expect($results[0]->status)->toBe(SweepStatus::Failed)
-        ->and($results[0]->reason)->toBe('guest request returned 500')
-        ->and($results[0]->guestStatus)->toBe(500);
-});
+        ->and($results[0]->reason)->toBe("guest request returned {$guest}; can't confirm guests are denied")
+        ->and($results[0]->guestStatus)->toBe($guest);
+})->with([400, 404, 405, 419, 429, 500, 503]);
 
-it('counts any other guest response as denied', function (int $guest) {
+it('counts a guest redirect, 401 or 403 as denied', function (int $guest) {
     $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: $guest));
 
     expect($results[0]->status)->toBe(SweepStatus::Passed)
         ->and($results[0]->guestStatus)->toBe($guest);
-})->with([302, 401, 403, 404, 419]);
+})->with([301, 302, 303, 307, 401, 403]);
 
 it('passes when authorized succeeds and guest is denied', function () {
     $results = sweepWith([target()], new FakeRequester(authorized: 200, guest: 302));
