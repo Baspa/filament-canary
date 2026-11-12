@@ -36,9 +36,11 @@ Then let Canary inspect your panels and propose a config for you:
 php artisan canary:install
 ```
 
-It reads each panel's access gate (the user model's `canAccessPanel`, plus tenancy) and proposes an `acting_as` resolver: `assignRole('admin')` for role gates (when the user model has `assignRole()`), a matching email for allowlists, a factory flag for boolean gates, or a plain factory user when it can't tell (clearly marked, for you to adjust). For a tenant panel it also proposes a `tenant` resolver that makes the acting user a member, when it finds the membership relation.
+It reads each panel's access gate (the user model's `canAccessPanel`, plus tenancy) and proposes an `acting_as` resolver: `assignRole('admin')` for role gates (when the user model has `assignRole()`), a matching email for allowlists, a factory flag for boolean gates, or a plain factory user when it can't tell (clearly marked, for you to adjust). For a tenant panel it writes no tenant class when the tenant model has a many-to-many membership relation to the user model (see [Configuration](#configuration)), because the default tenant already attaches the acting user. Without that relation, it writes a `tenant` stub that you finish by attaching the acting user.
 
-After you confirm, it writes each resolver as an invokable class in `tests/Canary/` and puts the class names in `config/filament-canary.php`. It asks before overwriting an existing file, and an overwritten config keeps your other settings. Decline, and nothing is written: it prints the classes and the config entries instead.
+After you confirm, it writes each resolver as an invokable class in `tests/Canary/` and puts the class names in `config/filament-canary.php`. The classes get the namespace that `autoload-dev` in `composer.json` maps to `tests/`, plus `Canary` (`Tests\Canary` when there is no such mapping), so that mapping must exist for them to load.
+
+It asks before overwriting an existing file. An overwritten config keeps the current values of the package's options, but writes them as plain values: `env()` calls are frozen to their current value, closures and objects go back to the default (with a warning), and custom keys and comments are dropped. Decline, and nothing is written: it prints the classes and the config entries instead.
 
 Prefer to do it by hand? Publish the config and edit it yourself:
 
@@ -92,7 +94,7 @@ Prints a per-page report and exits non-zero when the sweep fails:
 
 Pass `--strict` to also fail on `needs-auth` pages once you've wired up `acting_as`, and `--fail-on-skipped` to fail on skipped pages. To make either permanent, and to apply it to `canarySweep()` as well, set `strict_authorization` or `fail_on_skipped` in the config.
 
-`canary:check` uses the app's configured database and doesn't run migrations. Against an unmigrated database every page is skipped, so the sweep fails. Migrate a file-based test database first; `:memory:` won't work, because `migrate` and `canary:check` run in separate processes. In GitHub Actions:
+`canary:check` uses the app's configured database and doesn't run migrations. On an empty database every page is skipped, so the sweep fails. If the database doesn't exist at all, such as a missing sqlite file, the command stops with a database error before it judges any page. Migrate a file-based test database first; `:memory:` won't work, because `migrate` and `canary:check` run in separate processes. In GitHub Actions:
 
 ```yaml
 - name: Canary sweep
@@ -111,16 +113,21 @@ If your tests already run in CI, prefer the test-suite route: `RefreshDatabase` 
 
 ## How a page is judged
 
-Canary sweeps every GET page in each panel: the dashboard, custom pages, resource pages and the profile page. It skips the routes in the panel's `auth` group (login, registration, password reset, email verification and the like) and Filament's redirect-only `home` and `tenant` routes.
+Canary sweeps every GET route a panel registers under `filament.{panel}.`. That includes the dashboard, custom pages, resource pages, the profile page, tenant registration and tenant profile pages, and GET routes that plugins add there. It skips two kinds of route:
 
-Each page is requested as the authorized user and, when `test_guests` is on, as a guest. Lazy widgets, lazy relation managers and deferred tables render during that request, so an error in them fails the page too.
+- the panel's `auth` routes (login, registration, password reset, email verification and the like), except the profile page;
+- `filament.{panel}.home` and `filament.{panel}.tenant`, which only redirect to another page.
+
+To leave out any other page, add it to `exclude` (see [Configuration](#configuration)).
+
+Each page is first requested as the authorized user. Only a 2xx is followed by a guest request (when `test_guests` is on), so a page that fails, needs auth or is skipped on the authorized request gets no guest check. Lazy widgets, lazy relation managers and deferred tables render during the authorized request, so an error in them fails the page too.
 
 | Result | Meaning |
 | --- | --- |
-| ✅ **passed** | Authorized user got a 2xx **and** a guest was denied (redirect / 401 / 403). |
+| ✅ **passed** | Authorized user got a 2xx **and** a guest was denied (redirect / 401 / 403). With `test_guests` off, the 2xx alone passes. |
 | ❌ **failed** | The authorized user got a 5xx, or a 4xx other than 401/403 (except the 404 under skipped). Or a guest got a 2xx (an authorization leak), or any other status that isn't a redirect, 401 or 403, such as a 404 or a 5xx. The canary's whole reason for existing. |
 | 🔒 **needs-auth** | The resolved user couldn't reach the page (redirect / 401 / 403). Almost always means you need to configure `acting_as`. Fails the sweep only in strict mode. |
-| ⏭️ **skipped** | Couldn't be swept automatically: no model factory for a record page, a resolver that failed, route parameters Canary can't fill, or a 404 on a record or tenant page (the reason names the likely cause). Always shown with a reason. Fails the sweep only with `fail_on_skipped`. |
+| ⏭️ **skipped** | Couldn't be swept automatically. Causes: no authorized user (no `acting_as` and no factory for the guard's user model), no tenant (no `tenant` resolver and no tenant factory), a resolver that failed, a record that couldn't be created (no factory, or it threw), route parameters Canary can't fill, a URL that couldn't be built, or a 404 on a record or tenant page (the reason names the likely cause). Always shown with a reason. Fails the sweep only with `fail_on_skipped`. |
 
 The sweep as a whole also fails when it found no pages, or when no page passed: a run where everything was skipped proves nothing. `canary:check` and `canarySweep()` apply the same rules.
 
@@ -163,7 +170,7 @@ Per panel, with an optional `default` for the other panels:
 
 A panel without an entry gets the factory user.
 
-Tenant-aware panels also need a tenant. By default Canary creates one with the tenant model's factory, and attaches the acting user when the tenant model has a many-to-many `members()` or `users()` relation (or one named after the user model). When membership needs more, such as a pivot value, set a `tenant` resolver. It takes the same values as `acting_as`, and gets the panel and the acting user, which Canary resolves first:
+Tenant-aware panels also need a tenant. By default Canary creates one with the tenant model's factory, and attaches the acting user when the tenant model has a many-to-many `members()` or `users()` relation (or one named after the user model). When there is no such relation, or membership needs more, such as a pivot value, set a `tenant` resolver. It takes the same values as `acting_as`, and gets the panel and the acting user, which Canary resolves first:
 
 ```php
 // config/filament-canary.php
@@ -197,7 +204,7 @@ use Filament\Panel;
 config()->set('filament-canary.acting_as', fn (Panel $panel) => User::factory()->admin()->create());
 ```
 
-Other options: `panels.only` / `panels.except` pick the panels to sweep. `exclude` takes Resource classes (all of their pages) and Page classes (that page only, such as `Dashboard::class` or `EditProfile::class`), and applies to every panel. `test_guests`, `strict_authorization`, `fail_on_skipped` and `use_transaction` are explained in the published config.
+Other options: `panels.only` / `panels.except` pick the panels to sweep. `exclude` takes Resource classes (all of their pages) and Page or controller classes (that route only, such as `Dashboard::class`, `EditProfile::class` or a plugin's page), and applies to every panel. `test_guests`, `strict_authorization`, `fail_on_skipped` and `use_transaction` are explained in the published config.
 
 ## Safety
 
