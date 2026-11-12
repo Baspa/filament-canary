@@ -25,24 +25,27 @@ trait InteractsWithCanary
 
         $verdict = SweepVerdict::judge($results);
 
-        $this->assertTrue($verdict->passed(), $this->describeVerdict($verdict, $results));
+        $this->assertTrue($verdict->passed(), $this->describeVerdict($verdict));
 
         return $results;
     }
 
-    /**
-     * @param  list<SweepResult>  $results
-     */
-    protected function describeVerdict(SweepVerdict $verdict, array $results): string
+    protected function describeVerdict(SweepVerdict $verdict): string
     {
         if ($verdict->passed()) {
             return '';
         }
 
-        $headline = $verdict->problem ?? count($verdict->failures).' Filament page(s) failed the canary sweep:';
+        $failed = count($verdict->failures).' Filament page(s) failed the canary sweep';
 
-        // With nothing passed and nothing failed, the skip and needs-auth reasons are the only clue.
-        $listed = $verdict->failures === [] ? $results : $verdict->failures;
+        $headline = match (true) {
+            $verdict->problem() !== null => $verdict->problem(),
+            $verdict->anyPagePassed() => $failed.':',
+            default => $failed.' and none passed:',
+        };
+
+        // When nothing passed, the skip and needs-auth reasons explain why.
+        $listed = $verdict->anyPagePassed() ? $verdict->failures : $verdict->results;
 
         $lines = array_map(
             fn (SweepResult $result) => sprintf(

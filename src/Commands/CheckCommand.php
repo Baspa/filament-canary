@@ -30,8 +30,8 @@ class CheckCommand extends Command
             failOnSkipped: (bool) $this->option('fail-on-skipped'),
         );
 
-        if ($verdict->problem !== null) {
-            $this->components->error($verdict->problem);
+        if (($problem = $verdict->problem()) !== null) {
+            $this->components->error($problem);
         }
 
         return $verdict->passed() ? self::SUCCESS : self::FAILURE;

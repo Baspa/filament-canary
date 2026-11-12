@@ -9,11 +9,12 @@ namespace Baspa\FilamentCanary\Sweep;
 class SweepVerdict
 {
     /**
+     * @param  list<SweepResult>  $results
      * @param  list<SweepResult>  $failures
      */
     public function __construct(
+        public readonly array $results,
         public readonly array $failures,
-        public readonly ?string $problem = null,
     ) {}
 
     /**
@@ -29,29 +30,38 @@ class SweepVerdict
             fn (SweepResult $result) => $result->isFailure($strictAuthorization, $failOnSkipped),
         ));
 
-        return new self($failures, self::problemWith($results));
-    }
-
-    /**
-     * @param  list<SweepResult>  $results
-     */
-    protected static function problemWith(array $results): ?string
-    {
-        if ($results === []) {
-            return 'No Filament pages found to sweep. Is a panel registered, and do the filament-canary panels and exclude settings leave any pages?';
-        }
-
-        foreach ($results as $result) {
-            if ($result->status === SweepStatus::Passed) {
-                return null;
-            }
-        }
-
-        return 'No Filament page passed, so the sweep proved nothing.';
+        return new self($results, $failures);
     }
 
     public function passed(): bool
     {
-        return $this->failures === [] && $this->problem === null;
+        return $this->failures === [] && $this->problem() === null;
+    }
+
+    /**
+     * Why the sweep failed when no page counts as a failure on its own.
+     */
+    public function problem(): ?string
+    {
+        if ($this->results === []) {
+            return 'No Filament pages found to sweep. Is a panel registered, and do the filament-canary panels and exclude settings leave any pages?';
+        }
+
+        if ($this->failures === [] && ! $this->anyPagePassed()) {
+            return 'No Filament page passed, so the sweep proved nothing.';
+        }
+
+        return null;
+    }
+
+    public function anyPagePassed(): bool
+    {
+        foreach ($this->results as $result) {
+            if ($result->status === SweepStatus::Passed) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

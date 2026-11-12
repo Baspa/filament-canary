@@ -1,9 +1,11 @@
 <?php
 
 use Baspa\FilamentCanary\Introspection\PageTarget;
+use Baspa\FilamentCanary\Sweep\Requester;
 use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
 use Baspa\FilamentCanary\Sweep\SweepVerdict;
+use Illuminate\Contracts\Auth\Authenticatable;
 use PHPUnit\Framework\AssertionFailedError;
 
 function resultWithStatus(SweepStatus $status): SweepResult
@@ -18,6 +20,19 @@ function breakActingUser(): void
     config()->set('filament-canary.acting_as', fn () => throw new RuntimeException('no such table: users'));
 }
 
+function answerAuthorizedRequestsWith(int $status): void
+{
+    app()->instance(Requester::class, new class($status) implements Requester
+    {
+        public function __construct(private int $status) {}
+
+        public function get(string $url, ?Authenticatable $user, string $guard): int
+        {
+            return $user === null ? 302 : $this->status;
+        }
+    });
+}
+
 it('passes when a page passed and the rest were skipped or need auth', function () {
     $verdict = SweepVerdict::judge([
         resultWithStatus(SweepStatus::Passed),
@@ -26,7 +41,7 @@ it('passes when a page passed and the rest were skipped or need auth', function 
     ]);
 
     expect($verdict->passed())->toBeTrue()
-        ->and($verdict->problem)->toBeNull();
+        ->and($verdict->problem())->toBeNull();
 });
 
 it('fails when a page failed', function () {
@@ -36,14 +51,14 @@ it('fails when a page failed', function () {
 
     expect($verdict->passed())->toBeFalse()
         ->and($verdict->failures)->toBe([$failed])
-        ->and($verdict->problem)->toBeNull();
+        ->and($verdict->problem())->toBeNull();
 });
 
 it('fails when no pages were found', function () {
     $verdict = SweepVerdict::judge([]);
 
     expect($verdict->passed())->toBeFalse()
-        ->and($verdict->problem)->toContain('No Filament pages found');
+        ->and($verdict->problem())->toContain('No Filament pages found');
 });
 
 it('fails when no page passed', function () {
@@ -54,7 +69,43 @@ it('fails when no page passed', function () {
 
     expect($verdict->passed())->toBeFalse()
         ->and($verdict->failures)->toBe([])
-        ->and($verdict->problem)->toContain('No Filament page passed');
+        ->and($verdict->problem())->toContain('No Filament page passed');
+});
+
+it('leads with the failures instead of a setup problem when pages failed and none passed', function () {
+    $failed = resultWithStatus(SweepStatus::Failed);
+
+    $verdict = SweepVerdict::judge([$failed, resultWithStatus(SweepStatus::Skipped)]);
+
+    expect($verdict->passed())->toBeFalse()
+        ->and($verdict->failures)->toBe([$failed])
+        ->and($verdict->problem())->toBeNull();
+});
+
+it('describes only the failures when another page passed', function () {
+    $verdict = SweepVerdict::judge([
+        resultWithStatus(SweepStatus::Passed),
+        resultWithStatus(SweepStatus::Failed),
+        resultWithStatus(SweepStatus::Skipped),
+    ]);
+
+    expect($this->describeVerdict($verdict))
+        ->toStartWith('1 Filament page(s) failed the canary sweep:')
+        ->toContain('failed reason')
+        ->not->toContain('skipped reason');
+});
+
+it('describes every page with its reason when pages failed and none passed', function () {
+    $verdict = SweepVerdict::judge([
+        resultWithStatus(SweepStatus::Failed),
+        resultWithStatus(SweepStatus::Skipped),
+    ]);
+
+    expect($this->describeVerdict($verdict))
+        ->toStartWith('1 Filament page(s) failed the canary sweep and none passed:')
+        ->toContain('failed reason')
+        ->toContain('skipped reason')
+        ->not->toContain('proved nothing');
 });
 
 it('counts needs-auth pages as failures in strict mode', function () {
@@ -119,6 +170,25 @@ it('fails canarySweep() when every page was skipped, listing why', function () {
     expect(fn () => $this->canarySweep())
         ->toThrow(AssertionFailedError::class, 'No Filament page passed')
         ->toThrow(AssertionFailedError::class, 'no such table: users');
+});
+
+it('fails canarySweep() in strict mode when nothing passed, listing the skip reasons too', function () {
+    config()->set('filament-canary.strict_authorization', true);
+    answerAuthorizedRequestsWith(403);
+
+    expect(fn () => $this->canarySweep())
+        ->toThrow(AssertionFailedError::class, 'failed the canary sweep and none passed')
+        ->toThrow(AssertionFailedError::class, 'authorized user was denied (403)')
+        ->toThrow(AssertionFailedError::class, 'has no factory');
+});
+
+it('reports failing pages in canary:check without calling it a setup problem', function () {
+    answerAuthorizedRequestsWith(500);
+
+    $this->artisan('canary:check')
+        ->expectsOutputToContain('authorized request returned 500')
+        ->doesntExpectOutputToContain('No Filament page passed')
+        ->assertExitCode(1);
 });
 
 it('fails canarySweep() on a skipped page when fail_on_skipped is configured', function () {
