@@ -10,6 +10,7 @@ use Filament\Tables\Contracts\HasTable;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Livewire\Component;
 use Livewire\EventBus;
 use Livewire\Features\SupportLazyLoading\SupportLazyLoading;
@@ -79,8 +80,8 @@ class SmokeSweep
         }
 
         // Wrap the whole sweep in a transaction so the users/records it creates never
-        // persist. Covers the default connection only — see the production guard above
-        // for everything a rollback can't reach.
+        // persist. Covers the default connection only, which is why run() refuses
+        // environments that allowed_environments doesn't list.
         DB::beginTransaction();
 
         try {
@@ -98,15 +99,31 @@ class SmokeSweep
     {
         $environment = $this->currentEnvironment();
 
-        if ($environment === 'production') {
-            throw EnvironmentNotAllowedException::production();
+        if (in_array(strtolower($environment), ['production', 'prod', 'prd', 'live'], true)) {
+            throw EnvironmentNotAllowedException::production($environment);
         }
 
-        $allowed = (array) config('filament-canary.allowed_environments', ['local', 'testing']);
+        $allowed = $this->allowedEnvironments();
 
-        if (! in_array($environment, $allowed, true)) {
+        // The matcher app()->environment(...$patterns) uses, applied to currentEnvironment().
+        if (! Str::is($allowed, $environment)) {
             throw EnvironmentNotAllowedException::notListed($environment, $allowed);
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function allowedEnvironments(): array
+    {
+        $configured = config('filament-canary.allowed_environments', ['local', 'testing']);
+        $allowed = is_array($configured) ? array_values(array_filter($configured, is_string(...))) : [];
+
+        if ($allowed !== $configured) {
+            throw EnvironmentNotAllowedException::invalidConfig($configured);
+        }
+
+        return $allowed;
     }
 
     protected function currentEnvironment(): string

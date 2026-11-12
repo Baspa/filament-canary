@@ -216,11 +216,12 @@ authenticated user, so it takes two precautions:
 - **It only runs in the environments listed in `allowed_environments`** — `local` and
   `testing` by default. A rollback can't undo the other side effects of hitting every page
   as an admin (queued jobs, mail, audit logs, writes on other connections), so Canary
-  refuses to run anywhere else, and never runs in `production`, even when you list it.
+  refuses to run anywhere else. It never runs with `APP_ENV` set to `production`, `prod`,
+  `prd` or `live`, in any letter case, even when you list them.
 
 If you run `canary:check` with another `APP_ENV`, such as `ci` or `staging`, add that
 environment to the list in `config/filament-canary.php` (publish the config first if you
-haven't):
+haven't). Entries can be patterns, such as `ci-*`:
 
 ```php
 'allowed_environments' => ['local', 'testing', 'ci'],
