@@ -64,6 +64,21 @@ it('proposes a matching email for an allowlist gate', function () {
         ->and($p->confidence)->toBe('medium');
 });
 
+it('leaves acting_as to the user when the guard has no usable user model', function (mixed $provider, mixed $model) {
+    config()->set('auth.guards.web.provider', $provider);
+    config()->set('auth.providers.users.model', $model);
+
+    $p = (new AccessAnalyzer)->analyze(Panel::make()->id('admin'));
+
+    expect($p->needsActingAs)->toBeTrue()
+        ->and($p->actingAsExpression)->toBeNull()
+        ->and($p->confidence)->toBe('none');
+})->with([
+    'no provider' => [null, User::class],
+    'provider is not a string' => [['users'], User::class],
+    'model is not a string' => ['users', ['class' => User::class]],
+]);
+
 it('detects a role gate in tenancy methods when canAccessPanel is open', function () {
     config()->set('auth.guards.web.provider', 'users');
     config()->set('auth.providers.users.model', PermissionTenantUser::class);

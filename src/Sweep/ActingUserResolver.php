@@ -4,6 +4,7 @@ namespace Baspa\FilamentCanary\Sweep;
 
 use Baspa\FilamentCanary\Support\ConfiguredResolver;
 use Baspa\FilamentCanary\Support\Factories;
+use Baspa\FilamentCanary\Support\GuardModel;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\Authenticatable;
 use UnexpectedValueException;
@@ -37,7 +38,7 @@ class ActingUserResolver
 
     protected function fromFactory(Panel $panel): ?Authenticatable
     {
-        $modelClass = $this->guardModel($panel->getAuthGuard());
+        $modelClass = GuardModel::for($panel->getAuthGuard());
 
         if ($modelClass === null || ! Factories::has($modelClass)) {
             return null;
@@ -46,18 +47,5 @@ class ActingUserResolver
         $user = Factories::make($modelClass);
 
         return $user instanceof Authenticatable ? $user : null;
-    }
-
-    protected function guardModel(string $guard): ?string
-    {
-        $provider = config("auth.guards.{$guard}.provider");
-
-        if (! is_string($provider)) {
-            return null;
-        }
-
-        $model = config("auth.providers.{$provider}.model");
-
-        return is_string($model) ? $model : null;
     }
 }
