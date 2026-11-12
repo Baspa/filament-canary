@@ -1,10 +1,16 @@
 <?php
 
+use Baspa\FilamentCanary\Support\TenantMembership;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
+use Baspa\FilamentCanary\Sweep\TenantResolver;
+use Baspa\FilamentCanary\Tests\Fixtures\Database\Factories\TenantTeamFactory;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\HasManyUsersTeam;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\Team;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\TeamMember;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\TenantTeam;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\User;
 use Baspa\FilamentCanary\Tests\Fixtures\Resolvers\AttachingTeamTenant;
 use Baspa\FilamentCanary\Tests\Fixtures\Resolvers\OneArgumentTeamTenant;
 use Baspa\FilamentCanary\Tests\Fixtures\Resolvers\TeamMemberActingAs;
@@ -118,3 +124,42 @@ it('runs a failing tenant resolver once and skips every tenant page with its rea
             ->and($result->reason)->toBe('could not create a tenant for panel [team]: no teams today');
     }
 });
+
+it('attaches the acting user to the default factory tenant', function () {
+    expectEveryResultPassed(sweepTeamTenantPages());
+});
+
+it('falls back to the attached factory tenant when the tenant resolver returns null', function () {
+    config()->set('filament-canary.tenant', fn (Panel $panel, Authenticatable $user) => null);
+
+    expectEveryResultPassed(sweepTeamTenantPages());
+});
+
+it('leaves the default tenant alone when the user model is not one of its members', function () {
+    $panel = Panel::make()->id('team')->tenant(TenantTeam::class);
+
+    $tenant = (new TenantResolver)->resolve($panel, User::factory()->create());
+
+    expect($tenant)->toBeInstanceOf(TenantTeam::class)
+        ->and($tenant->members()->count())->toBe(0);
+});
+
+it('says what a tenant resolver returned when it is not a model', function () {
+    config()->set('filament-canary.tenant', fn () => TenantTeam::factory());
+
+    foreach (sweepTeamTenantPages() as $result) {
+        expect($result->status)->toBe(SweepStatus::Skipped)
+            ->and($result->reason)->toBe(
+                'could not create a tenant for panel [team]: [filament-canary.tenant] resolver for panel [team] must return an Eloquent model, got ['.TenantTeamFactory::class.'].'
+            );
+    }
+});
+
+it('finds the tenant relation to the user model only when it is many-to-many', function (string $tenantModel, string $userModel, ?string $relation) {
+    expect(TenantMembership::relation($tenantModel, $userModel))->toBe($relation);
+})->with([
+    'members() to the user model' => [TenantTeam::class, TeamMember::class, 'members'],
+    'members() to another model' => [TenantTeam::class, User::class, null],
+    'users() as has-many' => [HasManyUsersTeam::class, TeamMember::class, null],
+    'no relation at all' => [Team::class, TeamMember::class, null],
+]);

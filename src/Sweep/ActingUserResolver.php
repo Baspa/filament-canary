@@ -6,6 +6,7 @@ use Baspa\FilamentCanary\Support\ConfiguredResolver;
 use Baspa\FilamentCanary\Support\Factories;
 use Filament\Panel;
 use Illuminate\Contracts\Auth\Authenticatable;
+use UnexpectedValueException;
 
 /**
  * Produces the "authorized" user used to assert that a panel's pages mount.
@@ -19,12 +20,19 @@ class ActingUserResolver
     public function resolve(Panel $panel): ?Authenticatable
     {
         $resolver = ConfiguredResolver::find('filament-canary.acting_as', $panel);
+        $user = $resolver === null ? null : $resolver($panel);
 
-        if ($resolver !== null && ($user = $resolver($panel))) {
-            return $user;
+        if ($user === null) {
+            return $this->fromFactory($panel);
         }
 
-        return $this->fromFactory($panel);
+        if (! $user instanceof Authenticatable) {
+            throw new UnexpectedValueException(
+                "[filament-canary.acting_as] resolver for panel [{$panel->getId()}] must return an Authenticatable, got [".get_debug_type($user).'].'
+            );
+        }
+
+        return $user;
     }
 
     protected function fromFactory(Panel $panel): ?Authenticatable

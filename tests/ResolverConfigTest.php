@@ -4,8 +4,10 @@ use Baspa\FilamentCanary\Support\ConfiguredResolver;
 use Baspa\FilamentCanary\Sweep\SmokeSweep;
 use Baspa\FilamentCanary\Sweep\SweepResult;
 use Baspa\FilamentCanary\Sweep\SweepStatus;
+use Baspa\FilamentCanary\Tests\Fixtures\Database\Factories\TeamMemberFactory;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\Post;
 use Baspa\FilamentCanary\Tests\Fixtures\Models\RoleUser;
+use Baspa\FilamentCanary\Tests\Fixtures\Models\TeamMember;
 use Baspa\FilamentCanary\Tests\Fixtures\Resolvers\TeamMemberActingAs;
 use Filament\Panel;
 
@@ -87,10 +89,35 @@ it('runs a throwing acting_as resolver once per panel and reuses its reason', fu
 });
 
 it('skips a panel whose acting_as config is not a resolver, saying why', function () {
-    config()->set('filament-canary.acting_as', 'NotAClass');
+    config()->set('filament-canary.acting_as', Post::class);
 
     $result = app(SmokeSweep::class)->run()[0];
 
     expect($result->status)->toBe(SweepStatus::Skipped)
-        ->and($result->reason)->toContain('[filament-canary.acting_as] for panel [admin] must be a callable or an invokable class name, got [NotAClass]');
+        ->and($result->reason)->toContain('[filament-canary.acting_as] for panel [admin] must be a callable or an invokable class name, got ['.Post::class.']');
 });
+
+it('says when a configured resolver class cannot be autoloaded', function () {
+    config()->set('filament-canary.acting_as', 'Tests\\Canary\\AdminActingAs');
+
+    $result = app(SmokeSweep::class)->run()[0];
+
+    expect($result->status)->toBe(SweepStatus::Skipped)
+        ->and($result->reason)->toContain('names class [Tests\\Canary\\AdminActingAs], which could not be found or autoloaded')
+        ->and($result->reason)->toContain('autoload-dev');
+});
+
+it('says what an acting_as resolver returned when it is not a user', function (Closure $resolver, string $type) {
+    config()->set('filament-canary.acting_as', $resolver);
+
+    $result = app(SmokeSweep::class)->run()[0];
+
+    expect($result->status)->toBe(SweepStatus::Skipped)
+        ->and($result->reason)->toBe(
+            "could not create an authorized user for panel [admin]: [filament-canary.acting_as] resolver for panel [admin] must return an Authenticatable, got [{$type}]."
+        );
+})->with([
+    'a factory' => [fn () => TeamMember::factory(), TeamMemberFactory::class],
+    'an id' => [fn () => 42, 'int'],
+    'a model that is not a user' => [fn () => new Post, Post::class],
+]);

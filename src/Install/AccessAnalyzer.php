@@ -2,9 +2,9 @@
 
 namespace Baspa\FilamentCanary\Install;
 
+use Baspa\FilamentCanary\Support\TenantMembership;
 use Closure;
 use Filament\Panel;
-use Illuminate\Support\Str;
 use ReflectionClass;
 
 /**
@@ -170,7 +170,7 @@ class AccessAnalyzer
         }
 
         $tenant = '\\'.ltrim($tenantModel, '\\');
-        $relation = $userModel === null ? null : $this->membersRelation($tenantModel, $userModel);
+        $relation = $userModel === null ? null : TenantMembership::relation($tenantModel, $userModel);
 
         if ($relation === null) {
             return [
@@ -183,19 +183,6 @@ class AccessAnalyzer
             "{$tenant}::factory()->hasAttached(\$user, [], '{$relation}')->create()",
             "Makes the acting user a member through {$relation}(). Adjust if membership needs more (a role, a pivot value).",
         ];
-    }
-
-    protected function membersRelation(string $tenantModel, string $userModel): ?string
-    {
-        $candidates = array_unique([Str::camel(Str::plural(class_basename($userModel))), 'members', 'users']);
-
-        foreach ($candidates as $relation) {
-            if (method_exists($tenantModel, $relation)) {
-                return $relation;
-            }
-        }
-
-        return null;
     }
 
     /**
