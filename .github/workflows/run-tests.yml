@@ -31,7 +31,7 @@ jobs:
       fail-fast: true
       matrix:
         os: [ubuntu-latest]
-        php: [8.5, 8.4, 8.3]
+        php: [8.6, 8.5, 8.4, 8.3]
         laravel: [13.*, 12.*]
         stability: [prefer-lowest, prefer-stable]
         include:
@@ -39,6 +39,9 @@ jobs:
             testbench: 11.*
           - laravel: 12.*
             testbench: 10.*
+          # filament/actions requires openspout/openspout 4.x, which caps PHP at ~8.5.0.
+          - php: 8.6
+            composer-flags: --ignore-platform-req=php+
 
     name: P${{ matrix.php }} - L${{ matrix.laravel }} - ${{ matrix.stability }} - ${{ matrix.os }}
 
@@ -61,7 +64,7 @@ jobs:
       - name: Install dependencies
         run: |
           composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-interaction --no-update
-          composer update --${{ matrix.stability }} --prefer-dist --no-interaction
+          composer update --${{ matrix.stability }} --prefer-dist --no-interaction ${{ matrix.composer-flags }}
 
       - name: List Installed Dependencies
         run: composer show -D
