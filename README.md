@@ -24,7 +24,7 @@ The same goes for tests an AI agent writes or keeps up to date: someone still ha
 
 ## Installation
 
-Requires PHP 8.3+, Laravel 12 or 13, and Filament 4 or 5.
+Requires PHP 8.3+, Laravel 13, and Filament 4 or 5.
 
 ```bash
 composer require baspa/filament-canary --dev
