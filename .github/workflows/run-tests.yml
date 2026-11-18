@@ -27,6 +27,8 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
+    # PHP 8.6 is still a nightly, and Laravel 12 doesn't pass on it yet.
+    continue-on-error: ${{ matrix.php == 8.6 }}
     strategy:
       fail-fast: true
       matrix:
