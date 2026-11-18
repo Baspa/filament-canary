@@ -2,6 +2,20 @@
 
 All notable changes to `baspa/filament-canary` will be documented in this file.
 
+## v2.0.0 - 2026-11-18
+
+### Upgrading
+
+- **Requires Laravel 13.** Laravel 12 is no longer supported: it supports PHP up to 8.5 and no longer gets bug fixes. Stay on `^1.4` if your app is on Laravel 12. Filament 4 (from 4.9.0, the first release that allows Laravel 13) and Filament 5 are both supported. (#37)
+
+### Added
+
+- **PHP 8.6 support.** CI now runs PHP 8.3, 8.4, 8.5 and 8.6. Filament's own dependency `openspout/openspout` 4.x doesn't allow PHP 8.6 yet, so until Filament allows openspout 5, installing on PHP 8.6 needs `--ignore-platform-req=php+`. (#37)
+
+### Changed
+
+- PHPStan 2.3.6 or newer is required for development. (#37)
+
 ## v1.4.0 - 2026-11-12
 
 ### Upgrading
